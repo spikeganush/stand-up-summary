@@ -39,7 +39,34 @@ export async function GET(request: NextRequest) {
     const where: SummaryWhereClause = { userId: user.id };
 
     if (date) {
-      where.summaryDate = new Date(date);
+      // Query by date range to handle any time stored on that day
+      const queryDate = new Date(date);
+      const startOfDay = new Date(
+        Date.UTC(
+          queryDate.getUTCFullYear(),
+          queryDate.getUTCMonth(),
+          queryDate.getUTCDate(),
+          0,
+          0,
+          0,
+          0
+        )
+      );
+      const endOfDay = new Date(
+        Date.UTC(
+          queryDate.getUTCFullYear(),
+          queryDate.getUTCMonth(),
+          queryDate.getUTCDate(),
+          23,
+          59,
+          59,
+          999
+        )
+      );
+      where.summaryDate = {
+        gte: startOfDay,
+        lt: endOfDay,
+      };
     } else if (month !== null && year !== null) {
       // Filter by month/year range
       const monthNum = parseInt(month);

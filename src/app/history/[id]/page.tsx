@@ -146,8 +146,15 @@ export default function HistoryDetailPage({
       if (!response.ok) {
         throw new Error("Failed to delete summary");
       }
+      const data = await response.json();
       setDeleteDialogOpen(false);
-      router.push("/dashboard");
+      
+      // Navigate to the next closest summary, or dashboard if none left
+      if (data.nextId) {
+        router.push(`/history/${data.nextId}`);
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err) {
       console.error("Failed to delete summary:", err);
       setDeleting(false);

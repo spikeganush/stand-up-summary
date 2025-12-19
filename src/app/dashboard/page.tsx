@@ -93,6 +93,7 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [existingSummaryId, setExistingSummaryId] = useState<string | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -109,6 +110,46 @@ export default function DashboardPage() {
       router.push("/");
     }
   }, [status, router]);
+
+  // Check for existing summary when date changes
+  useEffect(() => {
+    async function checkExistingSummary() {
+      if (status !== "authenticated") return;
+
+      // Clear current summary when date changes
+      setSummary(null);
+      setSummaryError(null);
+      setSaveStatus("idle");
+      setSaveError(null);
+      setExistingSummaryId(null);
+
+      try {
+        const dateParam = toDateOnlyISO(selectedDate);
+        const response = await fetch(`/api/summaries?date=${encodeURIComponent(dateParam)}&limit=1`);
+        if (!response.ok) return;
+        
+        const data = await response.json();
+        if (data.summaries && data.summaries.length > 0) {
+          const existingSummary = data.summaries[0];
+          setExistingSummaryId(existingSummary.id);
+          
+          // Convert saved summary to SummaryResult format
+          setSummary({
+            summary: existingSummary.summaryText,
+            bulletPoints: existingSummary.bulletPoints || [],
+            highlights: existingSummary.highlights || [],
+            tickets: existingSummary.ticketSummaries || [],
+            untracked: existingSummary.untracked || [],
+          });
+          setSaveStatus("saved");
+        }
+      } catch (err) {
+        console.error("Error checking for existing summary:", err);
+      }
+    }
+
+    checkExistingSummary();
+  }, [selectedDate, status]);
 
   // Fetch commits when repos change
   const fetchCommits = useCallback(async () => {

@@ -92,12 +92,39 @@ export async function DELETE(
       return NextResponse.json({ error: "Summary not found" }, { status: 404 });
     }
 
+    // Find the closest summary to navigate to after deletion
+    // Try to find the next summary (more recent)
+    const nextSummary = await prisma.summary.findFirst({
+      where: {
+        userId: user.id,
+        id: { not: id },
+        summaryDate: { gt: summary.summaryDate },
+      },
+      orderBy: { summaryDate: "asc" },
+      select: { id: true },
+    });
+
+    // If no next summary, find the previous one (older)
+    const previousSummary = !nextSummary
+      ? await prisma.summary.findFirst({
+          where: {
+            userId: user.id,
+            id: { not: id },
+            summaryDate: { lt: summary.summaryDate },
+          },
+          orderBy: { summaryDate: "desc" },
+          select: { id: true },
+        })
+      : null;
+
+    const nextId = nextSummary?.id || previousSummary?.id || null;
+
     // Delete the summary
     await prisma.summary.delete({
       where: { id },
     });
 
-    return NextResponse.json({ deleted: true });
+    return NextResponse.json({ deleted: true, nextId });
   } catch (error) {
     console.error("Error deleting summary:", error);
     return NextResponse.json(
