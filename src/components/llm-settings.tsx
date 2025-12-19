@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,9 @@ import {
   Github,
   Sparkles,
   Ticket,
+  Loader2,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 interface LLMSettingsProps {
@@ -59,10 +62,14 @@ const providerInfo: Record<
   },
 };
 
+type TestStatus = "idle" | "testing" | "success" | "error";
+
 export function LLMSettings({ className }: LLMSettingsProps) {
   const [showLLMKey, setShowLLMKey] = useState(false);
   const [showGitHubPat, setShowGitHubPat] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [testStatus, setTestStatus] = useState<TestStatus>("idle");
+  const [testError, setTestError] = useState<string>("");
 
   const {
     llmProvider,
@@ -80,6 +87,47 @@ export function LLMSettings({ className }: LLMSettingsProps) {
   const currentProvider = providerInfo[llmProvider];
   const hasLLMKey = !!apiKeys[llmProvider];
   const hasGitHubPat = !!githubPat;
+  const currentApiKey = apiKeys[llmProvider] || "";
+
+  // Reset test status when provider or key changes
+  useEffect(() => {
+    setTestStatus("idle");
+    setTestError("");
+  }, [llmProvider, currentApiKey]);
+
+  const testConnection = useCallback(async () => {
+    if (!currentApiKey) return;
+
+    setTestStatus("testing");
+    setTestError("");
+
+    try {
+      const response = await fetch("/api/llm/test", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          provider: llmProvider,
+          apiKey: currentApiKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setTestStatus("success");
+      } else {
+        setTestStatus("error");
+        setTestError(data.error || "Connection failed");
+      }
+    } catch (error) {
+      setTestStatus("error");
+      setTestError(
+        error instanceof Error ? error.message : "Connection failed"
+      );
+    }
+  }, [llmProvider, currentApiKey]);
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -158,44 +206,90 @@ export function LLMSettings({ className }: LLMSettingsProps) {
                   <ExternalLink className="h-3 w-3" />
                 </a>
               </div>
-              <div className="relative">
-                <Input
-                  id="apiKey"
-                  type={showLLMKey ? "text" : "password"}
-                  placeholder={`Enter your ${currentProvider.name} API key`}
-                  value={apiKeys[llmProvider] || ""}
-                  onChange={(e) => setApiKey(llmProvider, e.target.value)}
-                  className="pr-10"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    id="apiKey"
+                    type={showLLMKey ? "text" : "password"}
+                    placeholder={`Enter your ${currentProvider.name} API key`}
+                    value={apiKeys[llmProvider] || ""}
+                    onChange={(e) => setApiKey(llmProvider, e.target.value)}
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
+                    onClick={() => setShowLLMKey(!showLLMKey)}
+                  >
+                    {showLLMKey ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </Button>
+                </div>
                 <Button
                   type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="absolute right-0 top-0 h-full px-3 hover:bg-transparent"
-                  onClick={() => setShowLLMKey(!showLLMKey)}
+                  variant="outline"
+                  size="default"
+                  onClick={testConnection}
+                  disabled={!hasLLMKey || testStatus === "testing"}
+                  className="shrink-0"
                 >
-                  {showLLMKey ? (
-                    <EyeOff className="h-4 w-4 text-muted-foreground" />
+                  {testStatus === "testing" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Testing...
+                    </>
                   ) : (
-                    <Eye className="h-4 w-4 text-muted-foreground" />
+                    "Test"
                   )}
                 </Button>
               </div>
             </div>
 
             {/* Status */}
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-accent/50">
-              <div
-                className={cn(
-                  "h-2 w-2 rounded-full",
-                  hasLLMKey ? "bg-green-500" : "bg-destructive"
-                )}
-              />
-              <span className="text-sm">
-                {hasLLMKey
-                  ? `${currentProvider.name} is configured`
-                  : `Add your ${currentProvider.name} API key to enable AI summaries`}
-              </span>
+            <div className="space-y-2">
+              {/* Test result feedback */}
+              {testStatus === "success" && (
+                <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <span className="text-sm text-green-600 dark:text-green-400">
+                    Connection successful! Your {currentProvider.name} API key
+                    is working.
+                  </span>
+                </div>
+              )}
+              {testStatus === "error" && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <XCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
+                  <div className="space-y-1">
+                    <span className="text-sm text-destructive font-medium">
+                      Connection failed
+                    </span>
+                    {testError && (
+                      <p className="text-xs text-destructive/80">{testError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Configuration status */}
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-accent/50">
+                <div
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    hasLLMKey ? "bg-green-500" : "bg-destructive"
+                  )}
+                />
+                <span className="text-sm">
+                  {hasLLMKey
+                    ? `${currentProvider.name} is configured`
+                    : `Add your ${currentProvider.name} API key to enable AI summaries`}
+                </span>
+              </div>
             </div>
           </TabsContent>
 
