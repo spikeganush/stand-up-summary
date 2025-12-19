@@ -15,10 +15,17 @@ import {
   Save,
   Loader2,
   CheckCircle2,
+  GitPullRequest,
+  GitMerge,
+  GitCommit,
+  FileCode,
+  ChevronDown,
+  ChevronUp,
+  Code2,
 } from "lucide-react";
 import { useState } from "react";
 import type { SummaryResult, TicketSummary } from "@/lib/llm";
-import { getJiraUrl } from "@/lib/jira";
+import type { TicketGroup } from "@/lib/github";
 
 interface JiraTicket {
   ticketId: string;
@@ -34,38 +41,219 @@ interface SummaryPanelProps {
   saveStatus?: "idle" | "saving" | "saved" | "error";
   saveError?: string | null;
   jiraTickets?: JiraTicket[];
+  ticketGroups?: TicketGroup[];
+  jiraBaseUrl?: string;
   className?: string;
 }
 
-function TicketCard({ ticket }: { ticket: TicketSummary }) {
-  const ticketUrl = getJiraUrl(ticket.ticketId);
+function TicketCard({
+  ticket,
+  ticketGroup,
+  jiraBaseUrl,
+}: {
+  ticket: TicketSummary;
+  ticketGroup?: TicketGroup;
+  jiraBaseUrl?: string;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const ticketUrl =
+    ticketGroup?.ticketUrl ||
+    `${jiraBaseUrl || "https://jira.atlassian.net/browse"}/${ticket.ticketId}`;
+
+  const hasPRs = ticketGroup && ticketGroup.pullRequests.length > 0;
+  const hasCommits = ticketGroup && ticketGroup.commits.length > 0;
+  const hasCodeInsights = ticket.codeInsights && ticket.codeInsights.length > 0;
+  const hasFilesChanged = ticket.filesChanged && ticket.filesChanged.length > 0;
 
   return (
-    <div className="p-4 rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20">
-      <div className="flex items-center gap-3 mb-3">
-        <a
-          href={ticketUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-mono text-sm font-semibold hover:bg-primary/90 transition-colors group"
-        >
-          {ticket.ticketId}
-          <ExternalLink className="h-3.5 w-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
-        </a>
-      </div>
-      <p className="text-foreground font-medium mb-2">{ticket.summary}</p>
-      {ticket.bulletPoints.length > 0 && (
-        <ul className="space-y-1.5">
-          {ticket.bulletPoints.map((point, index) => (
-            <li
-              key={index}
-              className="flex items-start gap-2 text-sm text-muted-foreground"
+    <div className="rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 overflow-hidden">
+      {/* Header */}
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <a
+              href={ticketUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground font-mono text-sm font-semibold hover:bg-primary/90 transition-colors group"
             >
-              <span className="text-primary mt-0.5 shrink-0">•</span>
-              <span>{point}</span>
-            </li>
-          ))}
-        </ul>
+              {ticket.ticketId}
+              <ExternalLink className="h-3.5 w-3.5 opacity-70 group-hover:opacity-100 transition-opacity" />
+            </a>
+
+            {/* PR badges */}
+            {hasPRs &&
+              ticketGroup.pullRequests.map((pr) => (
+                <a
+                  key={pr.number}
+                  href={pr.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: pr.merged
+                      ? "rgba(168, 85, 247, 0.15)"
+                      : pr.state === "open"
+                        ? "rgba(34, 197, 94, 0.15)"
+                        : "rgba(239, 68, 68, 0.15)",
+                    color: pr.merged
+                      ? "rgb(168, 85, 247)"
+                      : pr.state === "open"
+                        ? "rgb(34, 197, 94)"
+                        : "rgb(239, 68, 68)",
+                  }}
+                >
+                  {pr.merged ? (
+                    <GitMerge className="h-3 w-3" />
+                  ) : (
+                    <GitPullRequest className="h-3 w-3" />
+                  )}
+                  #{pr.number}
+                </a>
+              ))}
+          </div>
+
+          {/* Expand/collapse for details */}
+          {(hasCommits || hasCodeInsights || hasFilesChanged) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-7 px-2 text-muted-foreground hover:text-foreground"
+            >
+              {isExpanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </Button>
+          )}
+        </div>
+
+        {/* Summary */}
+        <p className="text-foreground font-medium mb-2">{ticket.summary}</p>
+
+        {/* Bullet points */}
+        {ticket.bulletPoints.length > 0 && (
+          <ul className="space-y-1.5">
+            {ticket.bulletPoints.map((point, index) => (
+              <li
+                key={index}
+                className="flex items-start gap-2 text-sm text-muted-foreground"
+              >
+                <span className="text-primary mt-0.5 shrink-0">•</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Code insights (always visible if present) */}
+        {hasCodeInsights && (
+          <div className="mt-3 pt-3 border-t border-primary/10">
+            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+              <Code2 className="h-3.5 w-3.5" />
+              Code Insights
+            </div>
+            <ul className="space-y-1">
+              {ticket.codeInsights!.map((insight, index) => (
+                <li key={index} className="text-xs text-muted-foreground/80">
+                  → {insight}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Expanded details */}
+      {isExpanded && (hasCommits || hasFilesChanged) && (
+        <div className="border-t border-primary/10 bg-background/50 p-4 space-y-4">
+          {/* Commits */}
+          {hasCommits && (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+                <GitCommit className="h-3.5 w-3.5" />
+                Commits ({ticketGroup.commits.length})
+              </div>
+              <div className="space-y-2">
+                {ticketGroup.commits.slice(0, 5).map((commit) => (
+                  <a
+                    key={commit.sha}
+                    href={commit.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block p-2 rounded-md bg-accent/50 hover:bg-accent transition-colors group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground truncate group-hover:text-primary transition-colors">
+                          {commit.message.split("\n")[0]}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                          <code className="font-mono">
+                            {commit.sha.substring(0, 7)}
+                          </code>
+                          <span className="text-green-500">
+                            +{commit.additions}
+                          </span>
+                          <span className="text-red-500">
+                            -{commit.deletions}
+                          </span>
+                        </div>
+                      </div>
+                      <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                    </div>
+                  </a>
+                ))}
+                {ticketGroup.commits.length > 5 && (
+                  <p className="text-xs text-muted-foreground">
+                    ... and {ticketGroup.commits.length - 5} more commits
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Files changed */}
+          {hasFilesChanged && (
+            <div>
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+                <FileCode className="h-3.5 w-3.5" />
+                Files Modified ({ticket.filesChanged!.length})
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {ticket.filesChanged!.slice(0, 8).map((file, index) => (
+                  <Badge
+                    key={index}
+                    variant="outline"
+                    className="text-xs font-mono py-0.5"
+                  >
+                    {file.split("/").pop()}
+                  </Badge>
+                ))}
+                {ticket.filesChanged!.length > 8 && (
+                  <Badge variant="outline" className="text-xs py-0.5">
+                    +{ticket.filesChanged!.length - 8} more
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Stats from ticket group */}
+          {ticketGroup && (
+            <div className="flex items-center gap-4 text-xs text-muted-foreground pt-2 border-t border-border/50">
+              <span className="text-green-500 font-mono">
+                +{ticketGroup.totalAdditions}
+              </span>
+              <span className="text-red-500 font-mono">
+                -{ticketGroup.totalDeletions}
+              </span>
+              <span>{ticketGroup.filesChanged.length} files</span>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -80,6 +268,8 @@ export function SummaryPanel({
   saveStatus = "idle",
   saveError,
   jiraTickets = [],
+  ticketGroups = [],
+  jiraBaseUrl,
   className,
 }: SummaryPanelProps) {
   const [copied, setCopied] = useState(false);
@@ -89,17 +279,23 @@ export function SummaryPanel({
 
     // Build copy text with ticket structure
     let text = summary.summary + "\n\n";
-    
+
     if (summary.tickets && summary.tickets.length > 0) {
       summary.tickets.forEach((ticket) => {
         text += `${ticket.ticketId}: ${ticket.summary}\n`;
         ticket.bulletPoints.forEach((point) => {
           text += `  • ${point}\n`;
         });
+        if (ticket.codeInsights && ticket.codeInsights.length > 0) {
+          text += "  Code insights:\n";
+          ticket.codeInsights.forEach((insight) => {
+            text += `    → ${insight}\n`;
+          });
+        }
         text += "\n";
       });
     }
-    
+
     if (summary.untracked && summary.untracked.length > 0) {
       text += "Other work:\n";
       summary.untracked.forEach((item) => {
@@ -127,7 +323,7 @@ export function SummaryPanel({
             <div>
               <CardTitle className="text-xl">Generating Summary...</CardTitle>
               <p className="text-sm text-muted-foreground mt-1">
-                Analyzing your commits and organizing by Jira tickets
+                Analyzing code changes and organizing by Jira tickets
               </p>
             </div>
           </div>
@@ -136,8 +332,8 @@ export function SummaryPanel({
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-6 w-3/4" />
           <div className="space-y-3 pt-4">
-            <Skeleton className="h-24 w-full rounded-xl" />
-            <Skeleton className="h-24 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-32 w-full rounded-xl" />
           </div>
         </CardContent>
       </Card>
@@ -170,7 +366,12 @@ export function SummaryPanel({
 
   if (!summary) {
     // Show empty state with Jira tickets if available
-    if (jiraTickets.length > 0) {
+    const displayTickets =
+      jiraTickets.length > 0
+        ? jiraTickets
+        : ticketGroups.map((g) => ({ ticketId: g.ticketId, url: g.ticketUrl }));
+
+    if (displayTickets.length > 0) {
       return (
         <Card className={cn("glass border-border/50", className)}>
           <CardHeader className="pb-4">
@@ -181,14 +382,15 @@ export function SummaryPanel({
               <div>
                 <CardTitle className="text-xl">Ready to Summarize</CardTitle>
                 <p className="text-sm text-muted-foreground mt-1">
-                  {jiraTickets.length} Jira ticket{jiraTickets.length !== 1 ? "s" : ""} detected
+                  {displayTickets.length} Jira ticket
+                  {displayTickets.length !== 1 ? "s" : ""} detected
                 </p>
               </div>
             </div>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {jiraTickets.map((ticket) => (
+              {displayTickets.map((ticket) => (
                 <a
                   key={ticket.ticketId}
                   href={ticket.url}
@@ -211,6 +413,9 @@ export function SummaryPanel({
   const hasTickets = summary.tickets && summary.tickets.length > 0;
   const hasUntracked = summary.untracked && summary.untracked.length > 0;
 
+  // Create a map of ticket groups for quick lookup
+  const ticketGroupMap = new Map(ticketGroups.map((g) => [g.ticketId, g]));
+
   return (
     <Card className={cn("glass border-primary/30 glow", className)}>
       <CardHeader className="pb-4">
@@ -225,7 +430,8 @@ export function SummaryPanel({
               </CardTitle>
               {hasTickets && (
                 <p className="text-sm text-muted-foreground mt-1">
-                  {summary.tickets!.length} ticket{summary.tickets!.length !== 1 ? "s" : ""} worked on
+                  {summary.tickets!.length} ticket
+                  {summary.tickets!.length !== 1 ? "s" : ""} worked on
                 </p>
               )}
             </div>
@@ -299,7 +505,12 @@ export function SummaryPanel({
             </h3>
             <div className="space-y-3">
               {summary.tickets!.map((ticket) => (
-                <TicketCard key={ticket.ticketId} ticket={ticket} />
+                <TicketCard
+                  key={ticket.ticketId}
+                  ticket={ticket}
+                  ticketGroup={ticketGroupMap.get(ticket.ticketId)}
+                  jiraBaseUrl={jiraBaseUrl}
+                />
               ))}
             </div>
           </div>

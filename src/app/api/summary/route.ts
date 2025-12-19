@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateSummary } from "@/lib/llm";
-import type { CommitWithDetails } from "@/lib/github";
+import type { CommitWithDetails, TicketGroup } from "@/lib/github";
 import type { LLMProvider } from "@/stores/settings-store";
 
 export async function POST(request: NextRequest) {
@@ -13,10 +13,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { commits, provider, apiKey } = body as {
+    const { commits, provider, apiKey, ticketGroups } = body as {
       commits: CommitWithDetails[];
       provider: LLMProvider;
       apiKey: string;
+      ticketGroups?: TicketGroup[];
     };
 
     if (!commits || !Array.isArray(commits)) {
@@ -40,18 +41,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const summary = await generateSummary(commits, provider, apiKey);
+    // Pass ticket groups for enhanced diff-based analysis
+    const summary = await generateSummary(
+      commits,
+      provider,
+      apiKey,
+      ticketGroups
+    );
 
     return NextResponse.json({ summary });
   } catch (error) {
     console.error("Error generating summary:", error);
-    
-    const errorMessage = error instanceof Error ? error.message : "Failed to generate summary";
-    
-    return NextResponse.json(
-      { error: errorMessage },
-      { status: 500 }
-    );
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to generate summary";
+
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-

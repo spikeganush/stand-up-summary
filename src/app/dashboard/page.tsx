@@ -26,6 +26,7 @@ import { DatePicker } from "@/components/date-picker";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getPreviousWorkingDay } from "@/lib/utils";
 import type { SummaryResult, ComplexityMetrics } from "@/lib/llm";
+import type { TicketGroup } from "@/lib/github";
 import {
   Sparkles,
   LogOut,
@@ -58,6 +59,7 @@ interface CommitData {
   additions: number;
   deletions: number;
   filesChanged: number;
+  branchName?: string;
   jiraTickets: { ticketId: string; url: string }[];
   pullRequest: PullRequestData | null;
 }
@@ -71,11 +73,19 @@ export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
-  const { selectedRepos, llmProvider, apiKeys, githubPat, useGithubPat } = useSettingsStore();
+  const {
+    selectedRepos,
+    llmProvider,
+    apiKeys,
+    githubPat,
+    useGithubPat,
+    jiraBaseUrl,
+  } = useSettingsStore();
 
   const [commits, setCommits] = useState<CommitData[]>([]);
   const [jiraTickets, setJiraTickets] = useState<JiraTicket[]>([]);
   const [pullRequests, setPullRequests] = useState<PullRequestData[]>([]);
+  const [ticketGroups, setTicketGroups] = useState<TicketGroup[]>([]);
   const [complexity, setComplexity] = useState<ComplexityMetrics | null>(null);
   const [loadingCommits, setLoadingCommits] = useState(false);
   const [commitsError, setCommitsError] = useState<string | null>(null);
@@ -84,10 +94,14 @@ export default function DashboardPage() {
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const [selectedDate, setSelectedDate] = useState<Date>(() => getPreviousWorkingDay());
+  const [selectedDate, setSelectedDate] = useState<Date>(() =>
+    getPreviousWorkingDay()
+  );
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -102,6 +116,7 @@ export default function DashboardPage() {
       setCommits([]);
       setJiraTickets([]);
       setPullRequests([]);
+      setTicketGroups([]);
       setComplexity(null);
       return;
     }
@@ -113,10 +128,12 @@ export default function DashboardPage() {
       const response = await fetch("/api/commits", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           repos: selectedRepos,
           githubPat: useGithubPat ? githubPat : undefined,
           date: selectedDate.toISOString(),
+          jiraBaseUrl: jiraBaseUrl || undefined,
+          includeDiffs: true,
         }),
       });
 
@@ -128,6 +145,7 @@ export default function DashboardPage() {
       setCommits(data.commits);
       setJiraTickets(data.jiraTickets);
       setPullRequests(data.pullRequests || []);
+      setTicketGroups(data.ticketGroups || []);
       setComplexity(data.complexity);
     } catch (err) {
       setCommitsError(
@@ -136,7 +154,7 @@ export default function DashboardPage() {
     } finally {
       setLoadingCommits(false);
     }
-  }, [selectedRepos, useGithubPat, githubPat, selectedDate]);
+  }, [selectedRepos, useGithubPat, githubPat, selectedDate, jiraBaseUrl]);
 
   useEffect(() => {
     if (status === "authenticated" && selectedRepos.length > 0) {
@@ -145,45 +163,57 @@ export default function DashboardPage() {
   }, [status, selectedRepos, fetchCommits]);
 
   // Save summary to database
-  const saveSummary = useCallback(async (summaryData: SummaryResult) => {
-    setSaveStatus("saving");
-    setSaveError(null);
+  const saveSummary = useCallback(
+    async (summaryData: SummaryResult) => {
+      setSaveStatus("saving");
+      setSaveError(null);
 
-    try {
-      const response = await fetch("/api/summaries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          summaryDate: selectedDate.toISOString(),
-          summaryText: summaryData.summary,
-          bulletPoints: summaryData.bulletPoints || [],
-          highlights: summaryData.highlights || [],
-          totalCommits: complexity?.totalCommits || commits.length,
-          totalAdditions: complexity?.totalAdditions || 0,
-          totalDeletions: complexity?.totalDeletions || 0,
-          totalFiles: complexity?.totalFilesChanged || 0,
-          complexityLevel: complexity?.level || "simple",
-          jiraTickets: jiraTickets.map((t) => t.ticketId),
-          repositories: selectedRepos,
-          commitsData: commits,
-          llmProvider,
-        }),
-      });
+      try {
+        const response = await fetch("/api/summaries", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            summaryDate: selectedDate.toISOString(),
+            summaryText: summaryData.summary,
+            bulletPoints: summaryData.bulletPoints || [],
+            highlights: summaryData.highlights || [],
+            totalCommits: complexity?.totalCommits || commits.length,
+            totalAdditions: complexity?.totalAdditions || 0,
+            totalDeletions: complexity?.totalDeletions || 0,
+            totalFiles: complexity?.totalFilesChanged || 0,
+            complexityLevel: complexity?.level || "simple",
+            jiraTickets: jiraTickets.map((t) => t.ticketId),
+            repositories: selectedRepos,
+            commitsData: commits,
+            llmProvider,
+          }),
+        });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to save summary");
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "Failed to save summary");
+        }
+
+        setSaveStatus("saved");
+        // Reset to idle after a delay
+        setTimeout(() => setSaveStatus("idle"), 3000);
+      } catch (err) {
+        console.error("Failed to save summary:", err);
+        setSaveStatus("error");
+        setSaveError(
+          err instanceof Error ? err.message : "Failed to save summary"
+        );
       }
-
-      setSaveStatus("saved");
-      // Reset to idle after a delay
-      setTimeout(() => setSaveStatus("idle"), 3000);
-    } catch (err) {
-      console.error("Failed to save summary:", err);
-      setSaveStatus("error");
-      setSaveError(err instanceof Error ? err.message : "Failed to save summary");
-    }
-  }, [selectedDate, complexity, commits, jiraTickets, selectedRepos, llmProvider]);
+    },
+    [
+      selectedDate,
+      complexity,
+      commits,
+      jiraTickets,
+      selectedRepos,
+      llmProvider,
+    ]
+  );
 
   // Manual save handler
   const handleManualSave = useCallback(async () => {
@@ -221,6 +251,7 @@ export default function DashboardPage() {
           commits,
           provider: llmProvider,
           apiKey,
+          ticketGroups, // Pass ticket groups for enhanced diff analysis
         }),
       });
 
@@ -241,7 +272,7 @@ export default function DashboardPage() {
     } finally {
       setLoadingSummary(false);
     }
-  }, [commits, llmProvider, apiKeys, saveSummary]);
+  }, [commits, llmProvider, apiKeys, ticketGroups, saveSummary]);
 
   if (status === "loading") {
     return (
@@ -354,7 +385,9 @@ export default function DashboardPage() {
           <Card className="glass border-border/50">
             <CardContent className="py-16 text-center">
               <GitCommit className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No repositories selected</h3>
+              <h3 className="text-lg font-semibold mb-2">
+                No repositories selected
+              </h3>
               <p className="text-muted-foreground mb-6">
                 Select the repositories you want to track for your stand-up
                 summary.
@@ -377,6 +410,8 @@ export default function DashboardPage() {
               saveStatus={saveStatus}
               saveError={saveError}
               jiraTickets={jiraTickets}
+              ticketGroups={ticketGroups}
+              jiraBaseUrl={jiraBaseUrl}
               className="w-full"
             />
 

@@ -21,6 +21,9 @@ export interface SettingsState {
   llmProvider: LLMProvider;
   apiKeys: Record<LLMProvider, string>;
 
+  // Jira settings
+  jiraBaseUrl: string;
+
   // UI preferences
   theme: "light" | "dark" | "system";
 
@@ -33,6 +36,7 @@ export interface SettingsState {
   setLLMProvider: (provider: LLMProvider) => void;
   setApiKey: (provider: LLMProvider, key: string) => void;
   getApiKey: () => string;
+  setJiraBaseUrl: (url: string) => void;
   setTheme: (theme: "light" | "dark" | "system") => void;
   clearSettings: () => void;
 }
@@ -47,6 +51,7 @@ const initialState = {
     anthropic: "",
     google: "",
   },
+  jiraBaseUrl: "https://jira.atlassian.net/browse",
   theme: "dark" as const,
 };
 
@@ -85,6 +90,8 @@ export const useSettingsStore = create<SettingsState>()(
         return state.apiKeys[state.llmProvider];
       },
 
+      setJiraBaseUrl: (url) => set({ jiraBaseUrl: url }),
+
       setTheme: (theme) => set({ theme }),
 
       clearSettings: () => set(initialState),
@@ -98,6 +105,7 @@ export const useSettingsStore = create<SettingsState>()(
         useGithubPat: state.useGithubPat,
         llmProvider: state.llmProvider,
         apiKeys: state.apiKeys,
+        jiraBaseUrl: state.jiraBaseUrl,
         theme: state.theme,
       }),
     }

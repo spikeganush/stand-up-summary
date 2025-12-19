@@ -31,6 +31,7 @@ import {
   ExternalLink,
   Github,
   Sparkles,
+  Ticket,
 } from "lucide-react";
 
 interface LLMSettingsProps {
@@ -68,10 +69,12 @@ export function LLMSettings({ className }: LLMSettingsProps) {
     apiKeys,
     githubPat,
     useGithubPat,
+    jiraBaseUrl,
     setLLMProvider,
     setApiKey,
     setGithubPat,
     setUseGithubPat,
+    setJiraBaseUrl,
   } = useSettingsStore();
 
   const currentProvider = providerInfo[llmProvider];
@@ -99,14 +102,18 @@ export function LLMSettings({ className }: LLMSettingsProps) {
         </DialogHeader>
 
         <Tabs defaultValue="llm" className="mt-4">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="llm" className="gap-2">
               <Sparkles className="h-4 w-4" />
-              AI Provider
+              AI
             </TabsTrigger>
             <TabsTrigger value="github" className="gap-2">
               <Github className="h-4 w-4" />
               GitHub
+            </TabsTrigger>
+            <TabsTrigger value="jira" className="gap-2">
+              <Ticket className="h-4 w-4" />
+              Jira
             </TabsTrigger>
           </TabsList>
 
@@ -288,6 +295,59 @@ export function LLMSettings({ className }: LLMSettingsProps) {
                   </p>
                 </div>
               )}
+            </div>
+          </TabsContent>
+
+          {/* Jira Tab */}
+          <TabsContent value="jira" className="space-y-6 py-4">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="jiraBaseUrl">Jira Base URL</Label>
+                <Input
+                  id="jiraBaseUrl"
+                  type="url"
+                  placeholder="https://your-company.atlassian.net/browse"
+                  value={jiraBaseUrl}
+                  onChange={(e) => setJiraBaseUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  The base URL for your Jira instance. Ticket IDs will be
+                  appended to this URL (e.g., SC-1234 → {jiraBaseUrl}/SC-1234).
+                </p>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <Label className="text-muted-foreground">
+                  Ticket Detection
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Tickets are automatically extracted from:
+                </p>
+                <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1 ml-2">
+                  <li>
+                    Branch names (e.g., <code>feature/SC-1234</code>)
+                  </li>
+                  <li>PR titles and branch names</li>
+                  <li>Commit messages</li>
+                </ul>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-accent/50">
+                <div
+                  className={cn(
+                    "h-2 w-2 rounded-full",
+                    jiraBaseUrl ? "bg-green-500" : "bg-yellow-500"
+                  )}
+                />
+                <span className="text-sm">
+                  {jiraBaseUrl
+                    ? "Jira integration configured"
+                    : "Add your Jira URL to enable ticket links"}
+                </span>
+              </div>
             </div>
           </TabsContent>
         </Tabs>

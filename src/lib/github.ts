@@ -3,6 +3,11 @@
  */
 
 import { getCommitDateRange, getCommitDateRangeForDate } from "./utils";
+import {
+  extractTicketFromBranch,
+  extractJiraTickets,
+  getJiraUrl,
+} from "./jira";
 
 const GITHUB_API_BASE = "https://api.github.com";
 
@@ -431,4 +436,393 @@ export async function fetchUserEmail(
   const emails: { email: string; primary: boolean }[] = await response.json();
   const primaryEmail = emails.find((e) => e.primary);
   return primaryEmail?.email;
+}
+
+/**
+ * Fetch branches that look like feature/ticket branches
+ * Returns branches that match ticket patterns (feature/, bugfix/, etc.)
+ */
+export async function fetchTicketBranches(
+  accessToken: string,
+  repoFullName: string
+): Promise<GitHubBranch[]> {
+  const branches = await fetchRepoBranches(accessToken, repoFullName);
+
+  // Filter for branches that look like ticket branches
+  const ticketPrefixes = [
+    "feature/",
+    "bugfix/",
+    "hotfix/",
+    "fix/",
+    "feat/",
+    "task/",
+    "story/",
+    "issue/",
+  ];
+
+  return branches.filter((branch) => {
+    const lowerName = branch.name.toLowerCase();
+    return ticketPrefixes.some((prefix) => lowerName.startsWith(prefix));
+  });
+}
+
+/**
+ * Fetch commits for a specific branch
+ */
+export async function fetchBranchCommits(
+  accessToken: string,
+  repoFullName: string,
+  branchName: string,
+  options?: {
+    since?: string;
+    until?: string;
+    author?: string;
+  }
+): Promise<GitHubCommit[]> {
+  const params = new URLSearchParams();
+  params.append("sha", branchName);
+  if (options?.since) params.append("since", options.since);
+  if (options?.until) params.append("until", options.until);
+  if (options?.author) params.append("author", options.author);
+  params.append("per_page", "100");
+
+  const response = await fetch(
+    `${GITHUB_API_BASE}/repos/${repoFullName}/commits?${params.toString()}`,
+    { headers: createHeaders(accessToken) }
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      return [];
+    }
+    throw new Error(`Failed to fetch branch commits: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Diff information for a commit
+ */
+export interface CommitDiff {
+  sha: string;
+  files: {
+    filename: string;
+    status: "added" | "removed" | "modified" | "renamed" | "copied";
+    additions: number;
+    deletions: number;
+    changes: number;
+    patch?: string; // The actual diff content
+  }[];
+  totalAdditions: number;
+  totalDeletions: number;
+}
+
+/**
+ * Fetch the diff/patch for a specific commit
+ * Returns truncated patch content (first ~500 lines per file) to manage token usage
+ */
+export async function fetchCommitDiff(
+  accessToken: string,
+  repoFullName: string,
+  sha: string,
+  maxLinesPerFile: number = 100
+): Promise<CommitDiff> {
+  const response = await fetch(
+    `${GITHUB_API_BASE}/repos/${repoFullName}/commits/${sha}`,
+    { headers: createHeaders(accessToken) }
+  );
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch commit diff: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // Process and truncate patches
+  const files =
+    data.files?.map(
+      (file: {
+        filename: string;
+        status: string;
+        additions: number;
+        deletions: number;
+        changes: number;
+        patch?: string;
+      }) => {
+        let patch = file.patch;
+
+        // Truncate patch if too long
+        if (patch) {
+          const lines = patch.split("\n");
+          if (lines.length > maxLinesPerFile) {
+            patch =
+              lines.slice(0, maxLinesPerFile).join("\n") +
+              `\n... (${lines.length - maxLinesPerFile} more lines truncated)`;
+          }
+        }
+
+        return {
+          filename: file.filename,
+          status: file.status as CommitDiff["files"][0]["status"],
+          additions: file.additions,
+          deletions: file.deletions,
+          changes: file.changes,
+          patch,
+        };
+      }
+    ) || [];
+
+  return {
+    sha,
+    files,
+    totalAdditions: data.stats?.additions || 0,
+    totalDeletions: data.stats?.deletions || 0,
+  };
+}
+
+/**
+ * Fetch PRs for a repository within a date range
+ */
+export async function fetchRepoPullRequests(
+  accessToken: string,
+  repoFullName: string,
+  options?: {
+    state?: "open" | "closed" | "all";
+    since?: string;
+  }
+): Promise<GitHubPullRequest[]> {
+  const params = new URLSearchParams();
+  params.append("state", options?.state || "all");
+  params.append("sort", "updated");
+  params.append("direction", "desc");
+  params.append("per_page", "100");
+
+  const response = await fetch(
+    `${GITHUB_API_BASE}/repos/${repoFullName}/pulls?${params.toString()}`,
+    { headers: createHeaders(accessToken) }
+  );
+
+  if (!response.ok) {
+    return [];
+  }
+
+  const prs: GitHubPullRequest[] = await response.json();
+
+  // Filter by date if since is provided
+  if (options?.since) {
+    const sinceDate = new Date(options.since);
+    return prs.filter((pr) => new Date(pr.updated_at) >= sinceDate);
+  }
+
+  return prs;
+}
+
+/**
+ * Get commits for a PR
+ */
+export async function fetchPRCommits(
+  accessToken: string,
+  repoFullName: string,
+  prNumber: number
+): Promise<GitHubCommit[]> {
+  const response = await fetch(
+    `${GITHUB_API_BASE}/repos/${repoFullName}/pulls/${prNumber}/commits?per_page=100`,
+    { headers: createHeaders(accessToken) }
+  );
+
+  if (!response.ok) {
+    return [];
+  }
+
+  return response.json();
+}
+
+/**
+ * Ticket group containing all related PRs, commits, and diffs
+ */
+export interface TicketGroup {
+  ticketId: string;
+  ticketUrl: string;
+  pullRequests: {
+    number: number;
+    title: string;
+    url: string;
+    state: "open" | "closed";
+    merged: boolean;
+    baseBranch: string;
+    headBranch: string;
+  }[];
+  commits: {
+    sha: string;
+    message: string;
+    author: string;
+    authorEmail: string;
+    date: string;
+    url: string;
+    repoFullName: string;
+    additions: number;
+    deletions: number;
+    filesChanged: number;
+    branchName?: string;
+  }[];
+  diffs: CommitDiff[];
+  totalAdditions: number;
+  totalDeletions: number;
+  filesChanged: string[];
+}
+
+/**
+ * Formatted commit data for API response
+ */
+export interface FormattedCommit {
+  sha: string;
+  message: string;
+  author: string;
+  authorEmail: string;
+  date: string;
+  url: string;
+  repoFullName: string;
+  additions: number;
+  deletions: number;
+  filesChanged: number;
+  branchName?: string;
+  pullRequest?: {
+    number: number;
+    title: string;
+    url: string;
+    state: "open" | "closed";
+    merged: boolean;
+    baseBranch: string;
+    headBranch: string;
+  } | null;
+  jiraTickets: { ticketId: string; url: string }[];
+  diff?: CommitDiff;
+}
+
+/**
+ * Group commits by Jira ticket
+ * Extracts ticket IDs from branch names, PR titles, and commit messages
+ */
+export function groupCommitsByTicket(
+  commits: FormattedCommit[],
+  jiraBaseUrl?: string
+): { ticketGroups: TicketGroup[]; orphanCommits: FormattedCommit[] } {
+  const ticketMap = new Map<string, TicketGroup>();
+  const orphanCommits: FormattedCommit[] = [];
+
+  for (const commit of commits) {
+    // Try to extract ticket from multiple sources
+    const ticketSources: string[] = [];
+
+    // Priority 1: Branch name from PR
+    if (commit.pullRequest?.headBranch) {
+      ticketSources.push(commit.pullRequest.headBranch);
+    }
+
+    // Priority 2: Branch name from commit
+    if (commit.branchName) {
+      ticketSources.push(commit.branchName);
+    }
+
+    // Priority 3: PR title
+    if (commit.pullRequest?.title) {
+      ticketSources.push(commit.pullRequest.title);
+    }
+
+    // Priority 4: Commit message
+    ticketSources.push(commit.message);
+
+    // Extract tickets from all sources
+    const tickets = new Set<string>();
+    for (const source of ticketSources) {
+      const branchTicket = extractTicketFromBranch(source);
+      if (branchTicket) {
+        tickets.add(branchTicket);
+      }
+      extractJiraTickets(source).forEach((t) => tickets.add(t));
+    }
+
+    if (tickets.size === 0) {
+      orphanCommits.push(commit);
+      continue;
+    }
+
+    // Add commit to each ticket group
+    for (const ticketId of tickets) {
+      if (!ticketMap.has(ticketId)) {
+        ticketMap.set(ticketId, {
+          ticketId,
+          ticketUrl: getJiraUrl(ticketId, jiraBaseUrl),
+          pullRequests: [],
+          commits: [],
+          diffs: [],
+          totalAdditions: 0,
+          totalDeletions: 0,
+          filesChanged: [],
+        });
+      }
+
+      const group = ticketMap.get(ticketId)!;
+
+      // Add commit
+      const commitEntry = {
+        sha: commit.sha,
+        message: commit.message,
+        author: commit.author,
+        authorEmail: commit.authorEmail,
+        date: commit.date,
+        url: commit.url,
+        repoFullName: commit.repoFullName,
+        additions: commit.additions,
+        deletions: commit.deletions,
+        filesChanged: commit.filesChanged,
+        branchName: commit.branchName || commit.pullRequest?.headBranch,
+      };
+
+      // Avoid duplicate commits
+      if (!group.commits.some((c) => c.sha === commit.sha)) {
+        group.commits.push(commitEntry);
+        group.totalAdditions += commit.additions;
+        group.totalDeletions += commit.deletions;
+      }
+
+      // Add PR if exists and not already added
+      if (
+        commit.pullRequest &&
+        !group.pullRequests.some((p) => p.number === commit.pullRequest!.number)
+      ) {
+        group.pullRequests.push(commit.pullRequest);
+      }
+
+      // Add diff if exists
+      if (commit.diff && !group.diffs.some((d) => d.sha === commit.diff!.sha)) {
+        group.diffs.push(commit.diff);
+
+        // Track files changed
+        commit.diff.files.forEach((file) => {
+          if (!group.filesChanged.includes(file.filename)) {
+            group.filesChanged.push(file.filename);
+          }
+        });
+      }
+    }
+  }
+
+  // Sort commits within each group by date
+  ticketMap.forEach((group) => {
+    group.commits.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+  });
+
+  // Convert to array and sort by total activity
+  const ticketGroups = Array.from(ticketMap.values()).sort(
+    (a, b) =>
+      b.commits.length +
+      b.pullRequests.length -
+      (a.commits.length + a.pullRequests.length)
+  );
+
+  return { ticketGroups, orphanCommits };
 }
