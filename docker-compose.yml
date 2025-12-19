@@ -1,0 +1,64 @@
+# Development Docker Compose - with hot reload
+# Usage: docker compose up (or docker compose watch for file sync)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: standup
+      POSTGRES_PASSWORD: standup_password
+      POSTGRES_DB: standup_summary
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U standup -d standup_summary"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - DATABASE_URL=postgresql://standup:standup_password@postgres:5432/standup_summary
+    depends_on:
+      postgres:
+        condition: service_healthy
+    develop:
+      watch:
+        # Sync source files
+        - action: sync
+          path: ./src
+          target: /app/src
+          ignore:
+            - node_modules/
+        # Sync public assets
+        - action: sync
+          path: ./public
+          target: /app/public
+        # Rebuild on package changes
+        - action: rebuild
+          path: ./package.json
+        # Rebuild on config changes
+        - action: rebuild
+          path: ./next.config.ts
+        - action: rebuild
+          path: ./tailwind.config.ts
+        - action: rebuild
+          path: ./tsconfig.json
+
+volumes:
+  postgres_data:

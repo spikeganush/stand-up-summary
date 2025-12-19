@@ -1,36 +1,122 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Stand-up Summary
+
+AI-powered daily stand-up preparation tool that fetches your GitHub commits, extracts Jira ticket links, and generates summaries using your preferred LLM provider.
+
+## Features
+
+- **GitHub Integration**: Connect your GitHub account and select repositories to track
+- **Smart Date Logic**: Automatically fetches previous working day commits (Friday if it's Monday)
+- **Jira Integration**: Extracts ticket IDs from branch names and commit messages
+- **AI Summaries**: Generate stand-up summaries using OpenAI, Anthropic, or Google
+- **Complexity Metrics**: Visual indicators showing commit complexity
+- **Docker Ready**: Easy deployment with Docker and docker-compose
+
+## Tech Stack
+
+- **Next.js 16** (App Router)
+- **NextAuth v5** (Auth.js) for GitHub OAuth
+- **Zustand** with persist middleware
+- **shadcn/ui** + Tailwind CSS v4
+- **Docker** for containerized deployment
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 20+
+- pnpm
+- GitHub OAuth App credentials
+
+### 1. Clone and Install
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo>
+cd stand-up-summary
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Configure Environment
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Create a `.env.local` file:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+# Generate a secret: openssl rand -base64 32
+AUTH_SECRET="your-secret-key"
 
-## Learn More
+# GitHub OAuth App credentials
+# Create at: https://github.com/settings/developers
+# Callback URL: http://localhost:3000/api/auth/callback/github
+AUTH_GITHUB_ID="your-github-client-id"
+AUTH_GITHUB_SECRET="your-github-client-secret"
 
-To learn more about Next.js, take a look at the following resources:
+# Optional: Custom Jira base URL
+NEXT_PUBLIC_JIRA_BASE_URL="https://your-org.atlassian.net/browse"
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 3. Run Development Server
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+pnpm dev
+```
 
-## Deploy on Vercel
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Docker
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Development (with hot reload)
+
+```bash
+# Start development environment
+docker compose up
+
+# Or use watch mode for file sync
+docker compose watch
+```
+
+The app will be available at [http://localhost:3000](http://localhost:3000).
+
+### Production
+
+```bash
+# Build and run production
+docker compose -f docker-compose.prod.yml up -d
+
+# With custom Postgres password
+POSTGRES_PASSWORD=your_secure_password docker compose -f docker-compose.prod.yml up -d
+```
+
+## LLM Configuration
+
+This app uses **Bring Your Own Key (BYOK)** model. Configure your API key in the app settings:
+
+- **OpenAI**: Get key at https://platform.openai.com/api-keys
+- **Anthropic**: Get key at https://console.anthropic.com/settings/keys
+- **Google**: Get key at https://aistudio.google.com/app/apikey
+
+API keys are stored locally in your browser and never sent to our servers.
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── api/           # API routes
+│   ├── dashboard/     # Dashboard page
+│   ├── layout.tsx     # Root layout
+│   └── page.tsx       # Landing page
+├── components/
+│   ├── ui/            # shadcn components
+│   └── ...            # App components
+├── lib/
+│   ├── auth.ts        # NextAuth config
+│   ├── github.ts      # GitHub API helpers
+│   ├── jira.ts        # Jira utilities
+│   ├── llm.ts         # LLM client
+│   └── utils.ts       # Utilities
+└── stores/
+    └── settings-store.ts  # Zustand store
+```
+
+## License
+
+MIT

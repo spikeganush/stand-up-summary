@@ -1,0 +1,96 @@
+// Prisma Schema for Stand-up Summary
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model - stores GitHub user info
+model User {
+  id            String    @id @default(cuid())
+  githubId      String    @unique
+  email         String?   @unique
+  name          String?
+  image         String?
+  
+  // GitHub PAT (encrypted) - optional fallback for restricted repos
+  githubPat     String?
+  
+  // Timestamps
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  // Relations
+  summaries     Summary[]
+  settings      UserSettings?
+  
+  @@map("users")
+}
+
+// User settings - preferences stored in DB
+model UserSettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Selected repositories (stored as JSON array)
+  selectedRepos   String[] @default([])
+  
+  // LLM preferences (API keys stored client-side for security)
+  llmProvider     String   @default("openai")
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@map("user_settings")
+}
+
+// Summary model - stores generated stand-up summaries
+model Summary {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // The date this summary is for (previous working day)
+  summaryDate     DateTime @db.Date
+  
+  // Summary content
+  summaryText     String
+  bulletPoints    String[] @default([])
+  highlights      String[] @default([])
+  
+  // Metadata
+  totalCommits    Int      @default(0)
+  totalAdditions  Int      @default(0)
+  totalDeletions  Int      @default(0)
+  totalFiles      Int      @default(0)
+  complexityLevel String   @default("simple")
+  
+  // Jira tickets found
+  jiraTickets     String[] @default([])
+  
+  // Repositories included
+  repositories    String[] @default([])
+  
+  // Raw commits data (JSON) for reference
+  commitsData     Json?
+  
+  // LLM provider used
+  llmProvider     String?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Unique constraint: one summary per user per date
+  @@unique([userId, summaryDate])
+  @@index([userId])
+  @@index([summaryDate])
+  @@map("summaries")
+}
