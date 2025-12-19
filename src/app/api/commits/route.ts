@@ -6,7 +6,6 @@ import {
   fetchCommitDiff,
   groupCommitsByTicket,
   type FormattedCommit,
-  type TicketGroup,
   type CommitDiff,
 } from "@/lib/github";
 import { extractAllJiraTickets } from "@/lib/jira";
@@ -51,13 +50,10 @@ export async function POST(request: NextRequest) {
     const complexity = calculateComplexity(commits);
 
     // Group commits by repository
-    const commitsByRepo = repos.reduce(
-      (acc, repo) => {
-        acc[repo] = commits.filter((c) => c.repoFullName === repo);
-        return acc;
-      },
-      {} as Record<string, typeof commits>
-    );
+    const commitsByRepo = repos.reduce((acc, repo) => {
+      acc[repo] = commits.filter((c) => c.repoFullName === repo);
+      return acc;
+    }, {} as Record<string, typeof commits>);
 
     // Fetch diffs for each commit (in parallel, with concurrency limit)
     const diffMap = new Map<string, CommitDiff>();
