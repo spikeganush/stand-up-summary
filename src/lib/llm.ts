@@ -6,10 +6,18 @@ import type { CommitWithDetails } from "./github";
 import { extractJiraTickets } from "./jira";
 import type { LLMProvider } from "@/stores/settings-store";
 
+export interface TicketSummary {
+  ticketId: string;
+  summary: string;
+  bulletPoints: string[];
+}
+
 export interface SummaryResult {
   summary: string;
   bulletPoints: string[];
   highlights: string[];
+  tickets?: TicketSummary[];
+  untracked?: string[];
 }
 
 /**
@@ -33,39 +41,92 @@ interface FlattenedCommit {
  * Accepts either flattened commits (from frontend) or nested commits (from GitHub API)
  */
 function buildPrompt(commits: (FlattenedCommit | CommitWithDetails)[]): string {
-  const commitDetails = commits
-    .map((c) => {
-      // Handle both flattened (frontend) and nested (GitHub API) structures
-      const message = 'commit' in c && c.commit?.message ? c.commit.message : (c as FlattenedCommit).message;
-      const tickets = extractJiraTickets(message);
-      return `- Repository: ${c.repoFullName}
-  Message: ${message}
-  Files changed: ${c.filesChanged}
-  Lines added: ${c.additions}
-  Lines deleted: ${c.deletions}
-  ${tickets.length > 0 ? `Jira tickets: ${tickets.join(", ")}` : ""}`;
-    })
-    .join("\n\n");
+  // Group commits by Jira ticket
+  const ticketCommits: Record<string, typeof commits> = {};
+  const untrackedCommits: typeof commits = [];
+
+  commits.forEach((c) => {
+    const message =
+      "commit" in c && c.commit?.message
+        ? c.commit.message
+        : (c as FlattenedCommit).message;
+    const tickets = extractJiraTickets(message);
+
+    if (tickets.length > 0) {
+      tickets.forEach((ticket) => {
+        if (!ticketCommits[ticket]) {
+          ticketCommits[ticket] = [];
+        }
+        ticketCommits[ticket].push(c);
+      });
+    } else {
+      untrackedCommits.push(c);
+    }
+  });
+
+  const formatCommit = (c: FlattenedCommit | CommitWithDetails) => {
+    const message =
+      "commit" in c && c.commit?.message
+        ? c.commit.message
+        : (c as FlattenedCommit).message;
+    return `  - ${message} (${c.filesChanged} files, +${c.additions}/-${c.deletions})`;
+  };
+
+  let commitDetails = "";
+
+  // Format ticket-grouped commits
+  Object.entries(ticketCommits).forEach(([ticket, ticketCommitList]) => {
+    commitDetails += `\n## Ticket: ${ticket}\n`;
+    ticketCommitList.forEach((c) => {
+      commitDetails += formatCommit(c) + "\n";
+    });
+  });
+
+  // Format untracked commits
+  if (untrackedCommits.length > 0) {
+    commitDetails += `\n## Untracked Work (no Jira ticket)\n`;
+    untrackedCommits.forEach((c) => {
+      commitDetails += formatCommit(c) + "\n";
+    });
+  }
+
+  const ticketList = Object.keys(ticketCommits);
 
   return `You are a helpful assistant that summarizes daily development work for stand-up meetings.
+Your summaries should be ORGANIZED BY JIRA TICKET - this is the most important structure for stand-ups.
 
-Given the following commits from yesterday, create a concise summary suitable for a daily stand-up meeting. 
-Focus on:
-1. What was accomplished (user-facing features, bug fixes, improvements)
-2. Any technical work (refactoring, infrastructure, dependencies)
-3. Work in progress items
+Given the following commits from yesterday, create a Jira-ticket-focused summary suitable for a daily stand-up meeting.
 
-Commits:
+Commits grouped by ticket:
 ${commitDetails}
+
+IMPORTANT: Structure your response around Jira tickets. Each ticket should have its own summary describing what was accomplished for that ticket.
 
 Please provide your response in the following JSON format:
 {
-  "summary": "A 1-2 sentence overview of the day's work",
-  "bulletPoints": ["Point 1", "Point 2", "Point 3"],
-  "highlights": ["Key achievement or notable item"]
+  "summary": "A 1-2 sentence high-level overview mentioning the main tickets worked on",
+  "tickets": [
+    ${ticketList
+      .map(
+        (t) => `{
+      "ticketId": "${t}",
+      "summary": "What was accomplished for this ticket",
+      "bulletPoints": ["Specific change 1", "Specific change 2"]
+    }`
+      )
+      .join(",\n    ")}
+  ],
+  "untracked": ["Any work not associated with a ticket"],
+  "bulletPoints": ["Legacy format - overall bullet points"],
+  "highlights": ["Key achievement or notable item - mention ticket IDs"]
 }
 
-Keep bullet points concise and action-oriented. Use past tense. Don't include commit hashes or technical jargon unless necessary.`;
+Guidelines:
+- Lead with ticket IDs in your summary (e.g., "Worked on SC-1291 and SC-1319...")
+- Each ticket summary should explain the business value or feature impact
+- Keep bullet points concise and action-oriented
+- Use past tense
+- Highlight which tickets are complete vs in-progress if discernible`;
 }
 
 /**
@@ -106,12 +167,21 @@ async function callOpenAI(
   const content = data.choices[0]?.message?.content;
 
   try {
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    return {
+      summary: parsed.summary || "",
+      bulletPoints: parsed.bulletPoints || [],
+      highlights: parsed.highlights || [],
+      tickets: parsed.tickets || [],
+      untracked: parsed.untracked || [],
+    };
   } catch {
     return {
       summary: content,
       bulletPoints: [],
       highlights: [],
+      tickets: [],
+      untracked: [],
     };
   }
 }
@@ -154,18 +224,29 @@ async function callAnthropic(
     // Try to extract JSON from the response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        summary: parsed.summary || "",
+        bulletPoints: parsed.bulletPoints || [],
+        highlights: parsed.highlights || [],
+        tickets: parsed.tickets || [],
+        untracked: parsed.untracked || [],
+      };
     }
     return {
       summary: content,
       bulletPoints: [],
       highlights: [],
+      tickets: [],
+      untracked: [],
     };
   } catch {
     return {
       summary: content,
       bulletPoints: [],
       highlights: [],
+      tickets: [],
+      untracked: [],
     };
   }
 }
@@ -178,7 +259,7 @@ async function callGoogle(
   apiKey: string
 ): Promise<SummaryResult> {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: {
@@ -201,9 +282,7 @@ async function callGoogle(
 
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(
-      error.error?.message || "Google Gemini API request failed"
-    );
+    throw new Error(error.error?.message || "Google Gemini API request failed");
   }
 
   const data = await response.json();
@@ -212,34 +291,47 @@ async function callGoogle(
   try {
     // Try to extract JSON from the response (may be wrapped in markdown code blocks)
     let jsonContent = content;
-    
+
     // Remove markdown code block markers if present
     if (jsonContent) {
       jsonContent = jsonContent
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
+        .replace(/^```json\s*/i, "")
+        .replace(/^```\s*/i, "")
+        .replace(/\s*```$/i, "")
         .trim();
     }
-    
+
     // Try to find JSON object in the response
     const jsonMatch = jsonContent?.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       return {
         summary: parsed.summary || "Summary generated successfully.",
-        bulletPoints: Array.isArray(parsed.bulletPoints) ? parsed.bulletPoints : [],
+        bulletPoints: Array.isArray(parsed.bulletPoints)
+          ? parsed.bulletPoints
+          : [],
         highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
+        tickets: Array.isArray(parsed.tickets) ? parsed.tickets : [],
+        untracked: Array.isArray(parsed.untracked) ? parsed.untracked : [],
       };
     }
-    
-    return JSON.parse(jsonContent);
+
+    const finalParsed = JSON.parse(jsonContent);
+    return {
+      summary: finalParsed.summary || "",
+      bulletPoints: finalParsed.bulletPoints || [],
+      highlights: finalParsed.highlights || [],
+      tickets: finalParsed.tickets || [],
+      untracked: finalParsed.untracked || [],
+    };
   } catch {
     // If parsing fails, try to extract meaningful content
     return {
       summary: content?.substring(0, 500) || "Unable to generate summary",
       bulletPoints: [],
       highlights: [],
+      tickets: [],
+      untracked: [],
     };
   }
 }
@@ -263,6 +355,8 @@ export async function generateSummary(
       summary: "No commits found for the previous working day.",
       bulletPoints: [],
       highlights: [],
+      tickets: [],
+      untracked: [],
     };
   }
 
@@ -302,7 +396,10 @@ export function calculateComplexity(
 
   // Calculate complexity score
   const score =
-    totalCommits * 2 + totalAdditions / 50 + totalDeletions / 100 + totalFilesChanged;
+    totalCommits * 2 +
+    totalAdditions / 50 +
+    totalDeletions / 100 +
+    totalFilesChanged;
 
   let level: ComplexityMetrics["level"];
   if (score < 5) {
@@ -324,4 +421,3 @@ export function calculateComplexity(
     score: Math.round(score),
   };
 }
-

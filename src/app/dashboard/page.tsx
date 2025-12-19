@@ -84,6 +84,9 @@ export default function DashboardPage() {
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
 
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const [selectedDate, setSelectedDate] = useState<Date>(() => getPreviousWorkingDay());
 
   // Redirect if not authenticated
@@ -141,6 +144,54 @@ export default function DashboardPage() {
     }
   }, [status, selectedRepos, fetchCommits]);
 
+  // Save summary to database
+  const saveSummary = useCallback(async (summaryData: SummaryResult) => {
+    setSaveStatus("saving");
+    setSaveError(null);
+
+    try {
+      const response = await fetch("/api/summaries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          summaryDate: selectedDate.toISOString(),
+          summaryText: summaryData.summary,
+          bulletPoints: summaryData.bulletPoints || [],
+          highlights: summaryData.highlights || [],
+          totalCommits: complexity?.totalCommits || commits.length,
+          totalAdditions: complexity?.totalAdditions || 0,
+          totalDeletions: complexity?.totalDeletions || 0,
+          totalFiles: complexity?.totalFilesChanged || 0,
+          complexityLevel: complexity?.level || "simple",
+          jiraTickets: jiraTickets.map((t) => t.ticketId),
+          repositories: selectedRepos,
+          commitsData: commits,
+          llmProvider,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to save summary");
+      }
+
+      setSaveStatus("saved");
+      // Reset to idle after a delay
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    } catch (err) {
+      console.error("Failed to save summary:", err);
+      setSaveStatus("error");
+      setSaveError(err instanceof Error ? err.message : "Failed to save summary");
+    }
+  }, [selectedDate, complexity, commits, jiraTickets, selectedRepos, llmProvider]);
+
+  // Manual save handler
+  const handleManualSave = useCallback(async () => {
+    if (summary) {
+      await saveSummary(summary);
+    }
+  }, [summary, saveSummary]);
+
   // Generate summary
   const generateSummary = useCallback(async () => {
     const apiKey = apiKeys[llmProvider];
@@ -159,6 +210,8 @@ export default function DashboardPage() {
 
     setLoadingSummary(true);
     setSummaryError(null);
+    setSaveStatus("idle");
+    setSaveError(null);
 
     try {
       const response = await fetch("/api/summary", {
@@ -179,31 +232,8 @@ export default function DashboardPage() {
       const data = await response.json();
       setSummary(data.summary);
 
-      // Save summary to database
-      try {
-        await fetch("/api/summaries", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            summaryDate: selectedDate.toISOString(),
-            summaryText: data.summary.summary,
-            bulletPoints: data.summary.bulletPoints || [],
-            highlights: data.summary.highlights || [],
-            totalCommits: complexity?.totalCommits || commits.length,
-            totalAdditions: complexity?.totalAdditions || 0,
-            totalDeletions: complexity?.totalDeletions || 0,
-            totalFiles: complexity?.totalFilesChanged || 0,
-            complexityLevel: complexity?.level || "simple",
-            jiraTickets: jiraTickets.map((t) => t.ticketId),
-            repositories: selectedRepos,
-            commitsData: commits,
-            llmProvider,
-          }),
-        });
-      } catch (saveError) {
-        console.error("Failed to save summary:", saveError);
-        // Don't show error to user - saving is optional
-      }
+      // Auto-save summary to database
+      await saveSummary(data.summary);
     } catch (err) {
       setSummaryError(
         err instanceof Error ? err.message : "Failed to generate summary"
@@ -211,7 +241,7 @@ export default function DashboardPage() {
     } finally {
       setLoadingSummary(false);
     }
-  }, [commits, llmProvider, apiKeys, selectedDate, complexity, jiraTickets, selectedRepos]);
+  }, [commits, llmProvider, apiKeys, saveSummary]);
 
   if (status === "loading") {
     return (
@@ -334,167 +364,149 @@ export default function DashboardPage() {
           </Card>
         )}
 
-        {/* Content Grid */}
+        {/* Content - Summary First */}
         {selectedRepos.length > 0 && (
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Summary Panel */}
-            <div className="lg:col-span-1 space-y-6">
-              <SummaryPanel
-                summary={summary}
-                loading={loadingSummary}
-                error={summaryError}
-                onRetry={generateSummary}
-              />
+          <div className="space-y-8">
+            {/* Hero Summary Panel - Full Width */}
+            <SummaryPanel
+              summary={summary}
+              loading={loadingSummary}
+              error={summaryError}
+              onRetry={generateSummary}
+              onSave={handleManualSave}
+              saveStatus={saveStatus}
+              saveError={saveError}
+              jiraTickets={jiraTickets}
+              className="w-full"
+            />
 
-              {/* Pull Requests */}
-              {pullRequests.length > 0 && (
-                <Card className="glass border-border/50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <GitPullRequest className="h-5 w-5" />
-                      Pull Requests
-                      <span className="text-sm font-normal text-muted-foreground">
-                        ({pullRequests.length})
-                      </span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-3">
-                      {pullRequests.map((pr) => (
-                        <a
-                          key={pr.number}
-                          href={pr.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block p-3 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                {pr.merged ? (
-                                  <GitMerge className="h-4 w-4 text-purple-500 shrink-0" />
-                                ) : pr.state === "open" ? (
-                                  <GitPullRequest className="h-4 w-4 text-green-500 shrink-0" />
-                                ) : (
-                                  <GitPullRequest className="h-4 w-4 text-red-500 shrink-0" />
-                                )}
-                                <span className="font-mono text-sm text-muted-foreground">
-                                  #{pr.number}
-                                </span>
+            {/* Secondary Content Grid */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Left Column - PRs and Stats */}
+              <div className="lg:col-span-1 space-y-6">
+                {/* Pull Requests */}
+                {pullRequests.length > 0 && (
+                  <Card className="glass border-border/50">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <GitPullRequest className="h-5 w-5" />
+                        Pull Requests
+                        <span className="text-sm font-normal text-muted-foreground">
+                          ({pullRequests.length})
+                        </span>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {pullRequests.map((pr) => (
+                          <a
+                            key={pr.number}
+                            href={pr.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block p-3 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  {pr.merged ? (
+                                    <GitMerge className="h-4 w-4 text-purple-500 shrink-0" />
+                                  ) : pr.state === "open" ? (
+                                    <GitPullRequest className="h-4 w-4 text-green-500 shrink-0" />
+                                  ) : (
+                                    <GitPullRequest className="h-4 w-4 text-red-500 shrink-0" />
+                                  )}
+                                  <span className="font-mono text-sm text-muted-foreground">
+                                    #{pr.number}
+                                  </span>
+                                </div>
+                                <p className="text-sm font-medium line-clamp-2">
+                                  {pr.title}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  {pr.headBranch} → {pr.baseBranch}
+                                </p>
                               </div>
-                              <p className="text-sm font-medium line-clamp-2">
-                                {pr.title}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {pr.headBranch} → {pr.baseBranch}
-                              </p>
+                              <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                             </div>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Jira Tickets */}
-              {jiraTickets.length > 0 && (
-                <Card className="glass border-border/50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <span className="text-xl">🎫</span>
-                      Jira Tickets
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex flex-wrap gap-2">
-                      {jiraTickets.map((ticket) => (
-                        <a
-                          key={ticket.ticketId}
-                          href={ticket.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center px-3 py-1.5 rounded-md bg-primary/10 text-primary font-mono text-sm hover:bg-primary/20 transition-colors"
-                        >
-                          {ticket.ticketId}
-                        </a>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Complexity Stats */}
-              {complexity && (
-                <Card className="glass border-border/50">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">Complexity</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <ComplexityStats metrics={complexity} />
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* Commits List */}
-            <div className="lg:col-span-2">
-              <Card className="glass border-border/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <GitCommit className="h-5 w-5" />
-                    Commits
-                    {commits.length > 0 && (
-                      <span className="text-sm font-normal text-muted-foreground">
-                        ({commits.length})
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {loadingCommits ? (
-                    <div className="space-y-4">
-                      {[...Array(3)].map((_, i) => (
-                        <div key={i} className="space-y-3">
-                          <Skeleton className="h-5 w-3/4" />
-                          <Skeleton className="h-4 w-1/2" />
-                          <div className="flex gap-2">
-                            <Skeleton className="h-6 w-16" />
-                            <Skeleton className="h-6 w-16" />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : commitsError ? (
-                    <div className="text-center py-8">
-                      <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-3" />
-                      <p className="text-destructive">{commitsError}</p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-4"
-                        onClick={fetchCommits}
-                      >
-                        Retry
-                      </Button>
-                    </div>
-                  ) : commits.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <GitCommit className="h-8 w-8 mx-auto mb-3 opacity-50" />
-                      <p>No commits found for the selected date.</p>
-                    </div>
-                  ) : (
-                    <ScrollArea className="h-[600px] pr-4">
-                      <div className="space-y-4">
-                        {commits.map((commit) => (
-                          <CommitCard key={commit.sha} {...commit} />
+                          </a>
                         ))}
                       </div>
-                    </ScrollArea>
-                  )}
-                </CardContent>
-              </Card>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Complexity Stats */}
+                {complexity && (
+                  <Card className="glass border-border/50">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">Complexity</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ComplexityStats metrics={complexity} />
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
+              {/* Right Column - Commits List */}
+              <div className="lg:col-span-2">
+                <Card className="glass border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      <GitCommit className="h-5 w-5" />
+                      Commits
+                      {commits.length > 0 && (
+                        <span className="text-sm font-normal text-muted-foreground">
+                          ({commits.length})
+                        </span>
+                      )}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {loadingCommits ? (
+                      <div className="space-y-4">
+                        {[...Array(3)].map((_, i) => (
+                          <div key={i} className="space-y-3">
+                            <Skeleton className="h-5 w-3/4" />
+                            <Skeleton className="h-4 w-1/2" />
+                            <div className="flex gap-2">
+                              <Skeleton className="h-6 w-16" />
+                              <Skeleton className="h-6 w-16" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : commitsError ? (
+                      <div className="text-center py-8">
+                        <AlertCircle className="h-8 w-8 text-destructive mx-auto mb-3" />
+                        <p className="text-destructive">{commitsError}</p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-4"
+                          onClick={fetchCommits}
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    ) : commits.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <GitCommit className="h-8 w-8 mx-auto mb-3 opacity-50" />
+                        <p>No commits found for the selected date.</p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[500px] pr-4">
+                        <div className="space-y-4">
+                          {commits.map((commit) => (
+                            <CommitCard key={commit.sha} {...commit} />
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
         )}
@@ -502,4 +514,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-

@@ -24,7 +24,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { useSettingsStore, type LLMProvider } from "@/stores/settings-store";
-import { Settings, Eye, EyeOff, ExternalLink, Github, Sparkles } from "lucide-react";
+import {
+  Settings,
+  Eye,
+  EyeOff,
+  ExternalLink,
+  Github,
+  Sparkles,
+} from "lucide-react";
 
 interface LLMSettingsProps {
   className?: string;
@@ -46,7 +53,7 @@ const providerInfo: Record<
   },
   google: {
     name: "Google",
-    description: "Gemini 1.5 Flash - Quick responses",
+    description: "Gemini 3 Flash - Quick responses",
     keyUrl: "https://aistudio.google.com/app/apikey",
   },
 };
@@ -204,8 +211,8 @@ export function LLMSettings({ className }: LLMSettingsProps) {
                     Use Personal Access Token
                   </Label>
                   <p className="text-xs text-muted-foreground">
-                    Enable this if OAuth can&apos;t access some of your org repos.
-                    PATs bypass OAuth app restrictions.
+                    Enable this if OAuth can&apos;t access some of your org
+                    repos. PATs bypass OAuth app restrictions.
                   </p>
                 </div>
               </div>
@@ -251,8 +258,8 @@ export function LLMSettings({ className }: LLMSettingsProps) {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Create a fine-grained PAT with <strong>repo</strong> access
-                      to your organization&apos;s repositories.
+                      Create a fine-grained PAT with <strong>repo</strong>{" "}
+                      access to your organization&apos;s repositories.
                     </p>
                   </div>
 
