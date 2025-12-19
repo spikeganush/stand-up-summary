@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -69,6 +69,14 @@ interface JiraTicket {
   url: string;
 }
 
+interface CachedCommitsData {
+  commits: CommitData[];
+  jiraTickets: JiraTicket[];
+  pullRequests: PullRequestData[];
+  ticketGroups: TicketGroup[];
+  complexity: ComplexityMetrics | null;
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -93,7 +101,9 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<SummaryResult | null>(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
-  const [existingSummaryId, setExistingSummaryId] = useState<string | null>(null);
+  const [existingSummaryId, setExistingSummaryId] = useState<string | null>(
+    null
+  );
 
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
@@ -104,6 +114,17 @@ export default function DashboardPage() {
     getPreviousWorkingDay()
   );
 
+  // Cache for commits data per date (key: date string like "2024-12-16")
+  const commitsCache = useRef<Map<string, CachedCommitsData>>(new Map());
+
+  // Helper to get cache key from date
+  const getDateCacheKey = useCallback((date: Date): string => {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}-${String(date.getDate()).padStart(2, "0")}`;
+  }, []);
+
   // Redirect if not authenticated
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -111,28 +132,57 @@ export default function DashboardPage() {
     }
   }, [status, router]);
 
-  // Check for existing summary when date changes
+  // Track if we need to auto-fetch commits (when no cache exists)
+  const [needsFetch, setNeedsFetch] = useState(false);
+
+  // Check for existing summary and cached commits when date changes
   useEffect(() => {
-    async function checkExistingSummary() {
+    async function checkExistingDataAndSummary() {
       if (status !== "authenticated") return;
 
-      // Clear current summary when date changes
+      // Clear current state when date changes
       setSummary(null);
       setSummaryError(null);
       setSaveStatus("idle");
       setSaveError(null);
       setExistingSummaryId(null);
+      setCommitsError(null);
 
+      // Check cache for commits data
+      const cacheKey = getDateCacheKey(selectedDate);
+      const cachedData = commitsCache.current.get(cacheKey);
+
+      if (cachedData) {
+        // Load from cache - no need to fetch
+        setCommits(cachedData.commits);
+        setJiraTickets(cachedData.jiraTickets);
+        setPullRequests(cachedData.pullRequests);
+        setTicketGroups(cachedData.ticketGroups);
+        setComplexity(cachedData.complexity);
+        setNeedsFetch(false);
+      } else {
+        // No cache - clear and mark for fetch
+        setCommits([]);
+        setJiraTickets([]);
+        setPullRequests([]);
+        setTicketGroups([]);
+        setComplexity(null);
+        setNeedsFetch(true);
+      }
+
+      // Check for existing saved summary
       try {
         const dateParam = toDateOnlyISO(selectedDate);
-        const response = await fetch(`/api/summaries?date=${encodeURIComponent(dateParam)}&limit=1`);
+        const response = await fetch(
+          `/api/summaries?date=${encodeURIComponent(dateParam)}&limit=1`
+        );
         if (!response.ok) return;
-        
+
         const data = await response.json();
         if (data.summaries && data.summaries.length > 0) {
           const existingSummary = data.summaries[0];
           setExistingSummaryId(existingSummary.id);
-          
+
           // Convert saved summary to SummaryResult format
           setSummary({
             summary: existingSummary.summaryText,
@@ -148,10 +198,10 @@ export default function DashboardPage() {
       }
     }
 
-    checkExistingSummary();
-  }, [selectedDate, status]);
+    checkExistingDataAndSummary();
+  }, [selectedDate, status, getDateCacheKey]);
 
-  // Fetch commits when repos change
+  // Fetch commits from API (always fetches fresh, bypassing cache)
   const fetchCommits = useCallback(async () => {
     if (selectedRepos.length === 0) {
       setCommits([]);
@@ -183,11 +233,28 @@ export default function DashboardPage() {
       }
 
       const data = await response.json();
-      setCommits(data.commits);
-      setJiraTickets(data.jiraTickets);
-      setPullRequests(data.pullRequests || []);
-      setTicketGroups(data.ticketGroups || []);
-      setComplexity(data.complexity);
+      const fetchedCommits = data.commits || [];
+      const fetchedJiraTickets = data.jiraTickets || [];
+      const fetchedPullRequests = data.pullRequests || [];
+      const fetchedTicketGroups = data.ticketGroups || [];
+      const fetchedComplexity = data.complexity || null;
+
+      // Update state
+      setCommits(fetchedCommits);
+      setJiraTickets(fetchedJiraTickets);
+      setPullRequests(fetchedPullRequests);
+      setTicketGroups(fetchedTicketGroups);
+      setComplexity(fetchedComplexity);
+
+      // Update cache
+      const cacheKey = getDateCacheKey(selectedDate);
+      commitsCache.current.set(cacheKey, {
+        commits: fetchedCommits,
+        jiraTickets: fetchedJiraTickets,
+        pullRequests: fetchedPullRequests,
+        ticketGroups: fetchedTicketGroups,
+        complexity: fetchedComplexity,
+      });
     } catch (err) {
       setCommitsError(
         err instanceof Error ? err.message : "Failed to fetch commits"
@@ -195,13 +262,22 @@ export default function DashboardPage() {
     } finally {
       setLoadingCommits(false);
     }
-  }, [selectedRepos, useGithubPat, githubPat, selectedDate, jiraBaseUrl]);
+  }, [
+    selectedRepos,
+    useGithubPat,
+    githubPat,
+    selectedDate,
+    jiraBaseUrl,
+    getDateCacheKey,
+  ]);
 
+  // Auto-fetch commits when needed (no cache exists for this date)
   useEffect(() => {
-    if (status === "authenticated" && selectedRepos.length > 0) {
+    if (needsFetch && status === "authenticated" && selectedRepos.length > 0) {
+      setNeedsFetch(false);
       fetchCommits();
     }
-  }, [status, selectedRepos, fetchCommits]);
+  }, [needsFetch, status, selectedRepos, fetchCommits]);
 
   // Save summary to database
   const saveSummary = useCallback(
@@ -409,19 +485,21 @@ export default function DashboardPage() {
               disabled={loadingCommits || selectedRepos.length === 0}
             >
               <RefreshCw
-                className={`h-4 w-4 mr-2 ${loadingCommits ? "animate-spin" : ""}`}
+                className={`h-4 w-4 mr-2 ${
+                  loadingCommits ? "animate-spin" : ""
+                }`}
               />
               Refresh
             </Button>
-            <Button
-              onClick={generateSummary}
-              disabled={
-                loadingSummary || commits.length === 0 || !apiKeys[llmProvider]
-              }
-            >
-              <Sparkles className="h-4 w-4 mr-2" />
-              Generate Summary
-            </Button>
+            {commits.length > 0 && (
+              <Button
+                onClick={generateSummary}
+                disabled={loadingSummary || !apiKeys[llmProvider]}
+              >
+                <Sparkles className="h-4 w-4 mr-2" />
+                Generate Summary
+              </Button>
+            )}
           </div>
         </div>
 
@@ -445,20 +523,22 @@ export default function DashboardPage() {
         {/* Content - Summary First */}
         {selectedRepos.length > 0 && (
           <div className="space-y-8">
-            {/* Hero Summary Panel - Full Width */}
-            <SummaryPanel
-              summary={summary}
-              loading={loadingSummary}
-              error={summaryError}
-              onRetry={generateSummary}
-              onSave={handleManualSave}
-              saveStatus={saveStatus}
-              saveError={saveError}
-              jiraTickets={jiraTickets}
-              ticketGroups={ticketGroups}
-              jiraBaseUrl={jiraBaseUrl}
-              className="w-full"
-            />
+            {/* Hero Summary Panel - Only show when there's content */}
+            {(summary || loadingSummary || summaryError) && (
+              <SummaryPanel
+                summary={summary}
+                loading={loadingSummary}
+                error={summaryError}
+                onRetry={generateSummary}
+                onSave={handleManualSave}
+                saveStatus={saveStatus}
+                saveError={saveError}
+                jiraTickets={jiraTickets}
+                ticketGroups={ticketGroups}
+                jiraBaseUrl={jiraBaseUrl}
+                className="w-full"
+              />
+            )}
 
             {/* Secondary Content Grid */}
             <div className="grid lg:grid-cols-3 gap-6">
