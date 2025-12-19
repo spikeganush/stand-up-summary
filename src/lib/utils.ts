@@ -50,10 +50,44 @@ export function formatDate(date: Date): string {
 }
 
 /**
+ * Format a summary date string for display.
+ * This handles dates stored in the database (which are in UTC at midnight)
+ * and displays them as the actual work date without timezone shifting.
+ */
+export function formatSummaryDate(dateString: string): string {
+  // Parse the ISO string and extract just the date part to avoid timezone issues
+  const date = new Date(dateString);
+  // Use UTC methods to get the date as it was stored (without local timezone conversion)
+  return new Date(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate()
+  ).toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+/**
  * Format a date for GitHub API (ISO 8601)
  */
 export function formatDateForGitHub(date: Date): string {
   return date.toISOString();
+}
+
+/**
+ * Convert a local date to an ISO string at noon UTC.
+ * This preserves the intended date regardless of the user's timezone.
+ * Use this when saving dates that represent "a day" rather than a specific moment.
+ */
+export function toDateOnlyISO(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  // Use noon UTC to avoid any timezone edge cases
+  return `${year}-${month}-${day}T12:00:00.000Z`;
 }
 
 /**

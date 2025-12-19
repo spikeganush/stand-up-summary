@@ -20,7 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { ComplexityBadge, ComplexityStats } from "@/components/complexity-badge";
 import { CommitCard } from "@/components/commit-card";
-import { formatDate } from "@/lib/utils";
+import { HistorySidebar } from "@/components/history-sidebar";
+import { formatDate, formatSummaryDate } from "@/lib/utils";
 import type { ComplexityMetrics, TicketSummary } from "@/lib/llm";
 import {
   ArrowLeft,
@@ -155,62 +156,83 @@ export default function HistoryDetailPage({
 
   if (status === "loading" || loading) {
     return (
-      <div className="min-h-screen dark animated-gradient">
-        <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
-          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
-            <Skeleton className="h-10 w-10 rounded-lg" />
-            <Skeleton className="h-6 w-48" />
+      <div className="min-h-screen dark animated-gradient flex">
+        {/* Sidebar skeleton */}
+        <div className="hidden md:block w-[280px] border-r border-border/50 bg-background/50 p-4">
+          <Skeleton className="h-6 w-20 mb-4" />
+          <Skeleton className="h-9 w-full mb-3" />
+          <Skeleton className="h-9 w-full mb-6" />
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-24 w-full rounded-lg" />
+            ))}
           </div>
-        </header>
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          <div className="space-y-6">
-            <Card className="glass border-border/50">
-              <CardHeader>
-                <Skeleton className="h-8 w-64" />
-                <Skeleton className="h-4 w-48 mt-2" />
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <Skeleton className="h-24 w-full" />
-                <Skeleton className="h-6 w-3/4" />
-                <Skeleton className="h-6 w-1/2" />
-              </CardContent>
-            </Card>
-          </div>
-        </main>
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1">
+          <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
+              <Skeleton className="h-10 w-10 rounded-lg" />
+              <Skeleton className="h-6 w-48" />
+            </div>
+          </header>
+          <main className="max-w-7xl mx-auto px-4 py-8">
+            <div className="space-y-6">
+              <Card className="glass border-border/50">
+                <CardHeader>
+                  <Skeleton className="h-8 w-64" />
+                  <Skeleton className="h-4 w-48 mt-2" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-6 w-1/2" />
+                </CardContent>
+              </Card>
+            </div>
+          </main>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen dark animated-gradient">
-        <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
-          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <h1 className="text-xl font-bold">Summary History</h1>
-          </div>
-        </header>
-        <main className="max-w-7xl mx-auto px-4 py-8">
-          <Card className="glass border-destructive/30">
-            <CardContent className="py-16 text-center">
-              <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">{error}</h3>
-              <p className="text-muted-foreground mb-6">
-                The summary you&apos;re looking for could not be found.
-              </p>
+      <div className="min-h-screen dark animated-gradient flex">
+        {/* Sidebar */}
+        <HistorySidebar currentSummaryId={id} className="hidden md:flex shrink-0" />
+
+        {/* Main content */}
+        <div className="flex-1">
+          <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
               <Link href="/dashboard">
-                <Button>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Dashboard
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-5 w-5" />
                 </Button>
               </Link>
-            </CardContent>
-          </Card>
-        </main>
+              <h1 className="text-xl font-bold">Summary History</h1>
+            </div>
+          </header>
+          <main className="max-w-7xl mx-auto px-4 py-8">
+            <Card className="glass border-destructive/30">
+              <CardContent className="py-16 text-center">
+                <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">{error}</h3>
+                <p className="text-muted-foreground mb-6">
+                  The summary you&apos;re looking for could not be found.
+                </p>
+                <Link href="/dashboard">
+                  <Button>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Dashboard
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          </main>
+        </div>
       </div>
     );
   }
@@ -239,78 +261,83 @@ export default function HistoryDetailPage({
   };
 
   return (
-    <div className="min-h-screen dark animated-gradient">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="icon">
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-            </Link>
-            <div className="flex items-center gap-3">
-              <Sparkles className="h-6 w-6 text-primary" />
-              <h1 className="text-xl font-bold">Summary History</h1>
-            </div>
-          </div>
+    <div className="min-h-screen dark animated-gradient flex">
+      {/* Sidebar */}
+      <HistorySidebar currentSummaryId={id} className="shrink-0 h-screen sticky top-0" />
 
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Calendar className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {formatDate(new Date(summary.summaryDate))}
-              </span>
-            </div>
-
-            <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
-                  <Trash2 className="h-4 w-4" />
+      {/* Main content wrapper */}
+      <div className="flex-1 min-w-0">
+        {/* Header */}
+        <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
+          <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-5 w-5" />
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete Summary</DialogTitle>
+              </Link>
+              <div className="flex items-center gap-3">
+                <Sparkles className="h-6 w-6 text-primary" />
+                <h1 className="text-xl font-bold">Summary History</h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Calendar className="h-4 w-4" />
+              <span className="text-sm font-medium">
+                {formatSummaryDate(summary.summaryDate)}
+              </span>
+              </div>
+
+              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete Summary</DialogTitle>
                   <DialogDescription>
                     Are you sure you want to delete this summary from{" "}
-                    {formatDate(new Date(summary.summaryDate))}? This action cannot be undone.
+                    {formatSummaryDate(summary.summaryDate)}? This action cannot be undone.
                   </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setDeleteDialogOpen(false)}
-                    disabled={deleting}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                  >
-                    {deleting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Deleting...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setDeleteDialogOpen(false)}
+                      disabled={deleting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDelete}
+                      disabled={deleting}
+                    >
+                      {deleting ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </>
+                      )}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 py-8">
+        {/* Main Content */}
+        <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="space-y-8">
           {/* Summary Card */}
           <Card className="glass border-primary/30 glow">
@@ -325,7 +352,7 @@ export default function HistoryDetailPage({
                       Stand-up Summary
                     </CardTitle>
                     <p className="text-sm text-muted-foreground mt-1">
-                      {formatDate(new Date(summary.summaryDate))}
+                      {formatSummaryDate(summary.summaryDate)}
                     </p>
                   </div>
                 </div>
@@ -648,6 +675,7 @@ export default function HistoryDetailPage({
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 }

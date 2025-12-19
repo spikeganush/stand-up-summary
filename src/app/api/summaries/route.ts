@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
+    const month = searchParams.get("month"); // 0-11
+    const year = searchParams.get("year");
     const limit = parseInt(searchParams.get("limit") || "10");
 
     // Find or create user
@@ -30,10 +32,24 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query
-    const where: { userId: string; summaryDate?: Date } = { userId: user.id };
+    interface SummaryWhereClause {
+      userId: string;
+      summaryDate?: Date | { gte: Date; lt: Date };
+    }
+    const where: SummaryWhereClause = { userId: user.id };
 
     if (date) {
       where.summaryDate = new Date(date);
+    } else if (month !== null && year !== null) {
+      // Filter by month/year range
+      const monthNum = parseInt(month);
+      const yearNum = parseInt(year);
+      const startDate = new Date(yearNum, monthNum, 1);
+      const endDate = new Date(yearNum, monthNum + 1, 1);
+      where.summaryDate = {
+        gte: startDate,
+        lt: endDate,
+      };
     }
 
     const summaries = await prisma.summary.findMany({

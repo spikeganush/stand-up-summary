@@ -24,7 +24,7 @@ import { ComplexityStats } from "@/components/complexity-badge";
 import { SummaryHistory } from "@/components/summary-history";
 import { DatePicker } from "@/components/date-picker";
 import { useSettingsStore } from "@/stores/settings-store";
-import { getPreviousWorkingDay } from "@/lib/utils";
+import { getPreviousWorkingDay, toDateOnlyISO } from "@/lib/utils";
 import type { SummaryResult, ComplexityMetrics } from "@/lib/llm";
 import type { TicketGroup } from "@/lib/github";
 import {
@@ -173,7 +173,7 @@ export default function DashboardPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            summaryDate: selectedDate.toISOString(),
+            summaryDate: toDateOnlyISO(selectedDate),
             summaryText: summaryData.summary,
             bulletPoints: summaryData.bulletPoints || [],
             highlights: summaryData.highlights || [],

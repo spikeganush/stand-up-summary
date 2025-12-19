@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { formatDate } from "@/lib/utils";
+import { formatSummaryDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -131,7 +131,7 @@ export function SummaryHistory({ className }: SummaryHistoryProps) {
                         <div className="flex items-center gap-2 mb-1">
                           <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-sm font-medium">
-                            {formatDate(new Date(summary.summaryDate))}
+                            {formatSummaryDate(summary.summaryDate)}
                           </span>
                         </div>
                         <p className="text-xs text-muted-foreground line-clamp-2">
