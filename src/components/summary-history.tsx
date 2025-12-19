@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { cn, formatDate } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { formatDate } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,20 +38,14 @@ interface SavedSummary {
 
 interface SummaryHistoryProps {
   className?: string;
-  onSelectSummary?: (summary: SavedSummary) => void;
 }
 
-export function SummaryHistory({
-  className,
-  onSelectSummary,
-}: SummaryHistoryProps) {
+export function SummaryHistory({ className }: SummaryHistoryProps) {
+  const router = useRouter();
   const [summaries, setSummaries] = useState<SavedSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedSummary, setSelectedSummary] = useState<SavedSummary | null>(
-    null
-  );
 
   useEffect(() => {
     async function fetchSummaries() {
@@ -74,16 +69,14 @@ export function SummaryHistory({
   }, [isOpen]);
 
   const handleSelectSummary = (summary: SavedSummary) => {
-    setSelectedSummary(summary);
-    if (onSelectSummary) {
-      onSelectSummary(summary);
-    }
+    setIsOpen(false);
+    router.push(`/history/${summary.id}`);
   };
 
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
-        <Button variant="outline" className={cn("gap-2", className)}>
+        <Button variant="outline" className={className}>
           <History className="h-4 w-4" />
           <span>History</span>
           {summaries.length > 0 && (
@@ -125,111 +118,41 @@ export function SummaryHistory({
               </p>
             </div>
           ) : (
-            <div className="flex gap-4">
-              {/* Summary List */}
-              <ScrollArea className="h-[500px] flex-1">
-                <div className="space-y-2 pr-4">
-                  {summaries.map((summary) => (
-                    <Card
-                      key={summary.id}
-                      className={cn(
-                        "p-3 cursor-pointer transition-colors hover:bg-accent/50",
-                        selectedSummary?.id === summary.id &&
-                          "border-primary bg-accent/50"
-                      )}
-                      onClick={() => handleSelectSummary(summary)}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-sm font-medium">
-                              {formatDate(new Date(summary.summaryDate))}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground line-clamp-2">
-                            {summary.summaryText}
-                          </p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <ComplexityBadge
-                              level={summary.complexityLevel}
-                              size="sm"
-                            />
-                            <span className="text-xs text-muted-foreground">
-                              {summary.totalCommits} commits
-                            </span>
-                          </div>
+            <ScrollArea className="h-[500px]">
+              <div className="space-y-2 pr-4">
+                {summaries.map((summary) => (
+                  <Card
+                    key={summary.id}
+                    className="p-3 cursor-pointer transition-colors hover:bg-accent/50"
+                    onClick={() => handleSelectSummary(summary)}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-sm font-medium">
+                            {formatDate(new Date(summary.summaryDate))}
+                          </span>
                         </div>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                      </div>
-                    </Card>
-                  ))}
-                </div>
-              </ScrollArea>
-
-              {/* Selected Summary Detail */}
-              {selectedSummary && (
-                <div className="flex-1 border-l pl-4">
-                  <div className="sticky top-0">
-                    <h3 className="font-semibold mb-2">
-                      {formatDate(new Date(selectedSummary.summaryDate))}
-                    </h3>
-
-                    <p className="text-sm text-muted-foreground mb-4">
-                      {selectedSummary.summaryText}
-                    </p>
-
-                    {selectedSummary.bulletPoints.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-xs uppercase text-muted-foreground mb-2">
-                          Key Points
-                        </h4>
-                        <ul className="space-y-1">
-                          {selectedSummary.bulletPoints.map((point, i) => (
-                            <li
-                              key={i}
-                              className="text-sm flex items-start gap-2"
-                            >
-                              <span className="text-primary">•</span>
-                              {point}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-
-                    {selectedSummary.jiraTickets.length > 0 && (
-                      <div className="mb-4">
-                        <h4 className="text-xs uppercase text-muted-foreground mb-2">
-                          Jira Tickets
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {selectedSummary.jiraTickets.map((ticket) => (
-                            <Badge
-                              key={ticket}
-                              variant="secondary"
-                              className="text-xs"
-                            >
-                              {ticket}
-                            </Badge>
-                          ))}
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {summary.summaryText}
+                        </p>
+                        <div className="flex items-center gap-2 mt-2">
+                          <ComplexityBadge
+                            level={summary.complexityLevel}
+                            size="sm"
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {summary.totalCommits} commits
+                          </span>
                         </div>
                       </div>
-                    )}
-
-                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                      <span className="text-green-500">
-                        +{selectedSummary.totalAdditions}
-                      </span>
-                      <span className="text-red-500">
-                        -{selectedSummary.totalDeletions}
-                      </span>
-                      <span>{selectedSummary.totalFiles} files</span>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                     </div>
-                  </div>
-                </div>
-              )}
-            </div>
+                  </Card>
+                ))}
+              </div>
+            </ScrollArea>
           )}
         </div>
       </SheetContent>

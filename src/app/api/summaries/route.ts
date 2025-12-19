@@ -67,6 +67,8 @@ export async function POST(request: NextRequest) {
       summaryText,
       bulletPoints,
       highlights,
+      ticketSummaries,
+      untracked,
       totalCommits,
       totalAdditions,
       totalDeletions,
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
       jiraTickets,
       repositories,
       commitsData,
+      pullRequestsData,
       llmProvider,
     } = body;
 
@@ -118,6 +121,8 @@ export async function POST(request: NextRequest) {
         summaryText,
         bulletPoints: bulletPoints || [],
         highlights: highlights || [],
+        ticketSummaries: ticketSummaries || null,
+        untracked: untracked || [],
         totalCommits: totalCommits || 0,
         totalAdditions: totalAdditions || 0,
         totalDeletions: totalDeletions || 0,
@@ -126,6 +131,7 @@ export async function POST(request: NextRequest) {
         jiraTickets: jiraTickets || [],
         repositories: repositories || [],
         commitsData: commitsData || null,
+        pullRequestsData: pullRequestsData || null,
         llmProvider: llmProvider || null,
       },
       create: {
@@ -134,6 +140,8 @@ export async function POST(request: NextRequest) {
         summaryText,
         bulletPoints: bulletPoints || [],
         highlights: highlights || [],
+        ticketSummaries: ticketSummaries || null,
+        untracked: untracked || [],
         totalCommits: totalCommits || 0,
         totalAdditions: totalAdditions || 0,
         totalDeletions: totalDeletions || 0,
@@ -142,6 +150,7 @@ export async function POST(request: NextRequest) {
         jiraTickets: jiraTickets || [],
         repositories: repositories || [],
         commitsData: commitsData || null,
+        pullRequestsData: pullRequestsData || null,
         llmProvider: llmProvider || null,
       },
     });

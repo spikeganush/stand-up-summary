@@ -66,6 +66,12 @@ model Summary {
   bulletPoints    String[] @default([])
   highlights      String[] @default([])
   
+  // Ticket-based summaries (JSON array of TicketSummary objects from LLM)
+  ticketSummaries Json?
+  
+  // Untracked work (work not associated with a Jira ticket)
+  untracked       String[] @default([])
+  
   // Metadata
   totalCommits    Int      @default(0)
   totalAdditions  Int      @default(0)
@@ -81,6 +87,9 @@ model Summary {
   
   // Raw commits data (JSON) for reference
   commitsData     Json?
+  
+  // Pull requests data (JSON) for reference
+  pullRequestsData Json?
   
   // LLM provider used
   llmProvider     String?
