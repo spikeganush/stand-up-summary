@@ -30,6 +30,7 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://standup:${POSTGRES_PASSWORD:-standup_password}@postgres:5432/standup_summary
+      - AUTH_TRUST_HOST=true
     depends_on:
       postgres:
         condition: service_healthy
