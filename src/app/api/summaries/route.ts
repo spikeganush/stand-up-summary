@@ -39,9 +39,10 @@ export async function GET(request: NextRequest) {
     const where: SummaryWhereClause = { userId: user.id };
 
     if (date) {
-      // Query by date range to handle any time stored on that day
+      // For @db.Date fields, we need to match exactly on the date (no time component)
+      // Parse the incoming date and create a Date at midnight UTC for that day
       const queryDate = new Date(date);
-      const startOfDay = new Date(
+      const dateOnly = new Date(
         Date.UTC(
           queryDate.getUTCFullYear(),
           queryDate.getUTCMonth(),
@@ -52,21 +53,7 @@ export async function GET(request: NextRequest) {
           0
         )
       );
-      const endOfDay = new Date(
-        Date.UTC(
-          queryDate.getUTCFullYear(),
-          queryDate.getUTCMonth(),
-          queryDate.getUTCDate(),
-          23,
-          59,
-          59,
-          999
-        )
-      );
-      where.summaryDate = {
-        gte: startOfDay,
-        lt: endOfDay,
-      };
+      where.summaryDate = dateOnly;
     } else if (month !== null && year !== null) {
       // Filter by month/year range
       const monthNum = parseInt(month);

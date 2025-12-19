@@ -78,16 +78,17 @@ export function formatDateForGitHub(date: Date): string {
 }
 
 /**
- * Convert a local date to an ISO string at noon UTC.
+ * Convert a local date to an ISO string at midnight UTC.
  * This preserves the intended date regardless of the user's timezone.
  * Use this when saving dates that represent "a day" rather than a specific moment.
+ * Prisma @db.Date fields expect midnight UTC.
  */
 export function toDateOnlyISO(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
-  // Use noon UTC to avoid any timezone edge cases
-  return `${year}-${month}-${day}T12:00:00.000Z`;
+  // Use midnight UTC to match Prisma @db.Date field storage
+  return `${year}-${month}-${day}T00:00:00.000Z`;
 }
 
 /**
