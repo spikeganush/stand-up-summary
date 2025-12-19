@@ -35,6 +35,7 @@ interface SavedSummary {
 
 interface HistorySidebarProps {
   currentSummaryId: string;
+  onSelectSummary?: (summaryId: string) => void;
   className?: string;
 }
 
@@ -55,6 +56,7 @@ const MONTHS = [
 
 export function HistorySidebar({
   currentSummaryId,
+  onSelectSummary,
   className,
 }: HistorySidebarProps) {
   const router = useRouter();
@@ -100,7 +102,15 @@ export function HistorySidebar({
   }, [fetchSummaries]);
 
   const handleSelectSummary = (summary: SavedSummary) => {
-    router.push(`/history/${summary.id}`);
+    if (onSelectSummary) {
+      // Use callback for client-side navigation (no full page refresh)
+      onSelectSummary(summary.id);
+      // Update URL without navigation
+      window.history.pushState(null, "", `/history/${summary.id}`);
+    } else {
+      // Fallback to full page navigation
+      router.push(`/history/${summary.id}`);
+    }
   };
 
   const handlePrevMonth = () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -93,15 +93,20 @@ export default function HistoryDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
+  const { id: initialId } = use(params);
   const { status } = useSession();
   const router = useRouter();
 
+  // Current summary ID (can change without full page navigation)
+  const [currentId, setCurrentId] = useState(initialId);
   const [summary, setSummary] = useState<SavedSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+
+  // Cache for fetched summaries
+  const summaryCache = useRef<Map<string, SavedSummary>>(new Map());
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -110,37 +115,56 @@ export default function HistoryDetailPage({
     }
   }, [status, router]);
 
-  // Fetch the summary
-  useEffect(() => {
-    async function fetchSummary() {
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await fetch(`/api/summaries/${id}`);
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error("Summary not found");
-          }
-          throw new Error("Failed to fetch summary");
-        }
-        const data = await response.json();
-        setSummary(data.summary);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load summary");
-      } finally {
-        setLoading(false);
-      }
+  // Fetch summary (with caching)
+  const fetchSummary = useCallback(async (summaryId: string) => {
+    // Check cache first
+    const cached = summaryCache.current.get(summaryId);
+    if (cached) {
+      setSummary(cached);
+      setLoading(false);
+      setError(null);
+      return;
     }
 
-    if (status === "authenticated" && id) {
-      fetchSummary();
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`/api/summaries/${summaryId}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Summary not found");
+        }
+        throw new Error("Failed to fetch summary");
+      }
+      const data = await response.json();
+      // Store in cache
+      summaryCache.current.set(summaryId, data.summary);
+      setSummary(data.summary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load summary");
+    } finally {
+      setLoading(false);
     }
-  }, [status, id]);
+  }, []);
+
+  // Fetch when currentId changes
+  useEffect(() => {
+    if (status === "authenticated" && currentId) {
+      fetchSummary(currentId);
+    }
+  }, [status, currentId, fetchSummary]);
+
+  // Handle sidebar selection (no full page navigation)
+  const handleSelectSummary = useCallback((summaryId: string) => {
+    if (summaryId !== currentId) {
+      setCurrentId(summaryId);
+    }
+  }, [currentId]);
 
   const handleDelete = async () => {
     try {
       setDeleting(true);
-      const response = await fetch(`/api/summaries/${id}`, {
+      const response = await fetch(`/api/summaries/${currentId}`, {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -149,9 +173,13 @@ export default function HistoryDetailPage({
       const data = await response.json();
       setDeleteDialogOpen(false);
       
+      // Remove from cache
+      summaryCache.current.delete(currentId);
+      
       // Navigate to the next closest summary, or dashboard if none left
       if (data.nextId) {
-        router.push(`/history/${data.nextId}`);
+        setCurrentId(data.nextId);
+        window.history.pushState(null, "", `/history/${data.nextId}`);
       } else {
         router.push("/dashboard");
       }
@@ -161,10 +189,11 @@ export default function HistoryDetailPage({
     }
   };
 
-  if (status === "loading" || loading) {
+  // Only show full skeleton on initial auth loading
+  if (status === "loading") {
     return (
       <div className="min-h-screen dark animated-gradient flex">
-        {/* Sidebar skeleton */}
+        {/* Sidebar skeleton - only on initial load */}
         <div className="hidden md:block w-[280px] border-r border-border/50 bg-background/50 p-4">
           <Skeleton className="h-6 w-20 mb-4" />
           <Skeleton className="h-9 w-full mb-3" />
@@ -176,7 +205,7 @@ export default function HistoryDetailPage({
           </div>
         </div>
 
-        {/* Main content */}
+        {/* Main content skeleton */}
         <div className="flex-1">
           <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
             <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
@@ -204,11 +233,14 @@ export default function HistoryDetailPage({
     );
   }
 
+  // Content loading state - keep sidebar visible
+  const contentLoading = loading && !summary;
+
   if (error) {
     return (
       <div className="min-h-screen dark animated-gradient flex">
         {/* Sidebar */}
-        <HistorySidebar currentSummaryId={id} className="hidden md:flex shrink-0" />
+        <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="hidden md:flex shrink-0" />
 
         {/* Main content */}
         <div className="flex-1">
@@ -244,8 +276,46 @@ export default function HistoryDetailPage({
     );
   }
 
-  if (!summary) {
-    return null;
+  // Show loading state with sidebar visible
+  if (!summary || contentLoading) {
+    return (
+      <div className="min-h-screen dark animated-gradient flex">
+        {/* Sidebar - stays visible */}
+        <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="shrink-0 h-screen sticky top-0" />
+
+        {/* Main content loading skeleton */}
+        <div className="flex-1 min-w-0">
+          <header className="sticky top-0 z-50 border-b border-border/50 backdrop-blur-xl bg-background/80">
+            <div className="max-w-7xl mx-auto px-4 py-4 flex items-center gap-4">
+              <Link href="/dashboard">
+                <Button variant="ghost" size="icon">
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+              </Link>
+              <div className="flex items-center gap-3">
+                <Sparkles className="h-6 w-6 text-primary" />
+                <h1 className="text-xl font-bold">Summary History</h1>
+              </div>
+            </div>
+          </header>
+          <main className="max-w-7xl mx-auto px-4 py-8">
+            <div className="space-y-6">
+              <Card className="glass border-border/50">
+                <CardHeader>
+                  <Skeleton className="h-8 w-64" />
+                  <Skeleton className="h-4 w-48 mt-2" />
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Skeleton className="h-24 w-full" />
+                  <Skeleton className="h-6 w-3/4" />
+                  <Skeleton className="h-6 w-1/2" />
+                </CardContent>
+              </Card>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
   }
 
   const commits = summary.commitsData || [];
@@ -270,7 +340,7 @@ export default function HistoryDetailPage({
   return (
     <div className="min-h-screen dark animated-gradient flex">
       {/* Sidebar */}
-      <HistorySidebar currentSummaryId={id} className="shrink-0 h-screen sticky top-0" />
+      <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="shrink-0 h-screen sticky top-0" />
 
       {/* Main content wrapper */}
       <div className="flex-1 min-w-0">
