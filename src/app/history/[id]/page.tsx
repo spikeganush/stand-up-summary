@@ -18,11 +18,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { ComplexityBadge, ComplexityStats } from "@/components/complexity-badge";
+import {
+  ComplexityBadge,
+  ComplexityStats,
+} from "@/components/complexity-badge";
 import { CommitCard } from "@/components/commit-card";
 import { HistorySidebar } from "@/components/history-sidebar";
 import { formatDate, formatSummaryDate } from "@/lib/utils";
-import type { ComplexityMetrics, TicketSummary } from "@/lib/llm";
+import {
+  calculateComplexity,
+  type ComplexityMetrics,
+  type TicketSummary,
+} from "@/lib/llm";
 import {
   ArrowLeft,
   Sparkles,
@@ -40,6 +47,7 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
+import { CommitWithDetails } from "@/lib/github";
 
 interface PullRequestData {
   number: number;
@@ -155,11 +163,14 @@ export default function HistoryDetailPage({
   }, [status, currentId, fetchSummary]);
 
   // Handle sidebar selection (no full page navigation)
-  const handleSelectSummary = useCallback((summaryId: string) => {
-    if (summaryId !== currentId) {
-      setCurrentId(summaryId);
-    }
-  }, [currentId]);
+  const handleSelectSummary = useCallback(
+    (summaryId: string) => {
+      if (summaryId !== currentId) {
+        setCurrentId(summaryId);
+      }
+    },
+    [currentId]
+  );
 
   const handleDelete = async () => {
     try {
@@ -172,10 +183,10 @@ export default function HistoryDetailPage({
       }
       const data = await response.json();
       setDeleteDialogOpen(false);
-      
+
       // Remove from cache
       summaryCache.current.delete(currentId);
-      
+
       // Navigate to the next closest summary, or dashboard if none left
       if (data.nextId) {
         setCurrentId(data.nextId);
@@ -240,7 +251,11 @@ export default function HistoryDetailPage({
     return (
       <div className="min-h-screen dark animated-gradient flex">
         {/* Sidebar */}
-        <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="hidden md:flex shrink-0" />
+        <HistorySidebar
+          currentSummaryId={currentId}
+          onSelectSummary={handleSelectSummary}
+          className="hidden md:flex shrink-0"
+        />
 
         {/* Main content */}
         <div className="flex-1">
@@ -281,7 +296,11 @@ export default function HistoryDetailPage({
     return (
       <div className="min-h-screen dark animated-gradient flex">
         {/* Sidebar - stays visible */}
-        <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="shrink-0 h-screen sticky top-0" />
+        <HistorySidebar
+          currentSummaryId={currentId}
+          onSelectSummary={handleSelectSummary}
+          className="shrink-0 h-screen sticky top-0"
+        />
 
         {/* Main content loading skeleton */}
         <div className="flex-1 min-w-0">
@@ -325,22 +344,17 @@ export default function HistoryDetailPage({
     totalAdditions: summary.totalAdditions,
     totalDeletions: summary.totalDeletions,
     totalFilesChanged: summary.totalFiles,
-    averageAdditionsPerCommit:
-      summary.totalCommits > 0
-        ? summary.totalAdditions / summary.totalCommits
-        : 0,
-    averageDeletionsPerCommit:
-      summary.totalCommits > 0
-        ? summary.totalDeletions / summary.totalCommits
-        : 0,
-    averageFilesPerCommit:
-      summary.totalCommits > 0 ? summary.totalFiles / summary.totalCommits : 0,
+    score: calculateComplexity(commits as unknown as CommitWithDetails[]).score,
   };
 
   return (
     <div className="min-h-screen dark animated-gradient flex">
       {/* Sidebar */}
-      <HistorySidebar currentSummaryId={currentId} onSelectSummary={handleSelectSummary} className="shrink-0 h-screen sticky top-0" />
+      <HistorySidebar
+        currentSummaryId={currentId}
+        onSelectSummary={handleSelectSummary}
+        className="shrink-0 h-screen sticky top-0"
+      />
 
       {/* Main content wrapper */}
       <div className="flex-1 min-w-0">
@@ -362,24 +376,32 @@ export default function HistoryDetailPage({
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2 text-muted-foreground">
                 <Calendar className="h-4 w-4" />
-              <span className="text-sm font-medium">
-                {formatSummaryDate(summary.summaryDate)}
-              </span>
+                <span className="text-sm font-medium">
+                  {formatSummaryDate(summary.summaryDate)}
+                </span>
               </div>
 
-              <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+              <Dialog
+                open={deleteDialogOpen}
+                onOpenChange={setDeleteDialogOpen}
+              >
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="text-destructive hover:text-destructive hover:bg-destructive/10">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>Delete Summary</DialogTitle>
-                  <DialogDescription>
-                    Are you sure you want to delete this summary from{" "}
-                    {formatSummaryDate(summary.summaryDate)}? This action cannot be undone.
-                  </DialogDescription>
+                    <DialogDescription>
+                      Are you sure you want to delete this summary from{" "}
+                      {formatSummaryDate(summary.summaryDate)}? This action
+                      cannot be undone.
+                    </DialogDescription>
                   </DialogHeader>
                   <DialogFooter>
                     <Button
@@ -415,344 +437,365 @@ export default function HistoryDetailPage({
 
         {/* Main Content */}
         <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="space-y-8">
-          {/* Summary Card */}
-          <Card className="glass border-primary/30 glow">
-            <CardHeader className="pb-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-primary/20">
-                    <Sparkles className="h-6 w-6 text-primary" />
+          <div className="space-y-8">
+            {/* Summary Card */}
+            <Card className="glass border-primary/30 glow">
+              <CardHeader className="pb-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/20">
+                      <Sparkles className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <CardTitle className="text-xl gradient-text">
+                        Stand-up Summary
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {formatSummaryDate(summary.summaryDate)}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <CardTitle className="text-xl gradient-text">
-                      Stand-up Summary
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {formatSummaryDate(summary.summaryDate)}
-                    </p>
-                  </div>
+                  <ComplexityBadge level={summary.complexityLevel} />
                 </div>
-                <ComplexityBadge level={summary.complexityLevel} />
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Summary Text */}
-              <p className="text-lg text-foreground leading-relaxed font-medium">
-                {summary.summaryText}
-              </p>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Summary Text */}
+                <p className="text-lg text-foreground leading-relaxed font-medium">
+                  {summary.summaryText}
+                </p>
 
-              {/* Ticket-based Summaries */}
-              {summary.ticketSummaries && summary.ticketSummaries.length > 0 ? (
-                <div className="space-y-4">
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    By Ticket
-                  </h3>
-                  <div className="space-y-3">
-                    {summary.ticketSummaries.map((ticket) => (
-                      <div
-                        key={ticket.ticketId}
-                        className="rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 p-4"
-                      >
-                        <div className="flex items-center gap-3 mb-3">
-                          <Badge className="bg-primary text-primary-foreground font-mono text-sm font-semibold px-3 py-1.5">
-                            {ticket.ticketId}
-                          </Badge>
-                        </div>
-                        <p className="text-foreground font-medium mb-2">
-                          {ticket.summary}
-                        </p>
-                        {ticket.bulletPoints.length > 0 && (
-                          <ul className="space-y-1.5 mb-3">
-                            {ticket.bulletPoints.map((point, index) => (
-                              <li
-                                key={index}
-                                className="flex items-start gap-2 text-sm text-muted-foreground"
-                              >
-                                <span className="text-primary mt-0.5 shrink-0">•</span>
-                                <span>{point}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {ticket.codeInsights && ticket.codeInsights.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-primary/10">
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
-                              <Code2 className="h-3.5 w-3.5" />
-                              Code Insights
-                            </div>
-                            <ul className="space-y-1">
-                              {ticket.codeInsights.map((insight, index) => (
-                                <li key={index} className="text-xs text-muted-foreground/80">
-                                  → {insight}
+                {/* Ticket-based Summaries */}
+                {summary.ticketSummaries &&
+                summary.ticketSummaries.length > 0 ? (
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      By Ticket
+                    </h3>
+                    <div className="space-y-3">
+                      {summary.ticketSummaries.map((ticket) => (
+                        <div
+                          key={ticket.ticketId}
+                          className="rounded-xl bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 p-4"
+                        >
+                          <div className="flex items-center gap-3 mb-3">
+                            <Badge className="bg-primary text-primary-foreground font-mono text-sm font-semibold px-3 py-1.5">
+                              {ticket.ticketId}
+                            </Badge>
+                          </div>
+                          <p className="text-foreground font-medium mb-2">
+                            {ticket.summary}
+                          </p>
+                          {ticket.bulletPoints.length > 0 && (
+                            <ul className="space-y-1.5 mb-3">
+                              {ticket.bulletPoints.map((point, index) => (
+                                <li
+                                  key={index}
+                                  className="flex items-start gap-2 text-sm text-muted-foreground"
+                                >
+                                  <span className="text-primary mt-0.5 shrink-0">
+                                    •
+                                  </span>
+                                  <span>{point}</span>
                                 </li>
                               ))}
                             </ul>
-                          </div>
-                        )}
-                        {ticket.filesChanged && ticket.filesChanged.length > 0 && (
-                          <div className="mt-3 pt-3 border-t border-primary/10">
-                            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
-                              <FileCode className="h-3.5 w-3.5" />
-                              Files Modified ({ticket.filesChanged.length})
-                            </div>
-                            <div className="flex flex-wrap gap-1">
-                              {ticket.filesChanged.slice(0, 8).map((file, index) => (
-                                <Badge
-                                  key={index}
-                                  variant="outline"
-                                  className="text-xs font-mono py-0.5"
-                                >
-                                  {file.split("/").pop()}
-                                </Badge>
-                              ))}
-                              {ticket.filesChanged.length > 8 && (
-                                <Badge variant="outline" className="text-xs py-0.5">
-                                  +{ticket.filesChanged.length - 8} more
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                          )}
+                          {ticket.codeInsights &&
+                            ticket.codeInsights.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-primary/10">
+                                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+                                  <Code2 className="h-3.5 w-3.5" />
+                                  Code Insights
+                                </div>
+                                <ul className="space-y-1">
+                                  {ticket.codeInsights.map((insight, index) => (
+                                    <li
+                                      key={index}
+                                      className="text-xs text-muted-foreground/80"
+                                    >
+                                      → {insight}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          {ticket.filesChanged &&
+                            ticket.filesChanged.length > 0 && (
+                              <div className="mt-3 pt-3 border-t border-primary/10">
+                                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground mb-2">
+                                  <FileCode className="h-3.5 w-3.5" />
+                                  Files Modified ({ticket.filesChanged.length})
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {ticket.filesChanged
+                                    .slice(0, 8)
+                                    .map((file, index) => (
+                                      <Badge
+                                        key={index}
+                                        variant="outline"
+                                        className="text-xs font-mono py-0.5"
+                                      >
+                                        {file.split("/").pop()}
+                                      </Badge>
+                                    ))}
+                                  {ticket.filesChanged.length > 8 && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-xs py-0.5"
+                                    >
+                                      +{ticket.filesChanged.length - 8} more
+                                    </Badge>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : summary.bulletPoints.length > 0 ? (
-                /* Legacy Bullet Points - fallback when no ticket summaries */
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    Key Points
-                  </h3>
-                  <ul className="space-y-2">
-                    {summary.bulletPoints.map((point, index) => (
-                      <li
-                        key={index}
-                        className="flex items-start gap-2 text-sm text-muted-foreground"
-                      >
-                        <span className="text-primary mt-0.5">•</span>
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-
-              {/* Untracked Work */}
-              {summary.untracked && summary.untracked.length > 0 && (
-                <div className="space-y-3">
-                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-                    Other Work
-                  </h3>
-                  <ul className="space-y-2">
-                    {summary.untracked.map((item, index) => (
-                      <li
-                        key={index}
-                        className="flex items-start gap-2 text-sm text-muted-foreground"
-                      >
-                        <span className="text-muted-foreground/60 mt-0.5">•</span>
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Highlights */}
-              {summary.highlights.length > 0 && (
-                <div className="pt-4 border-t border-border/50 overflow-hidden">
-                  <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">
-                    Highlights
-                  </p>
-                  <div className="space-y-2">
-                    {summary.highlights.map((highlight, index) => (
-                      <div
-                        key={index}
-                        className="bg-primary/10 text-primary hover:bg-primary/20 px-3 py-2 rounded-md text-sm"
-                      >
-                        {highlight}
-                      </div>
-                    ))}
+                ) : summary.bulletPoints.length > 0 ? (
+                  /* Legacy Bullet Points - fallback when no ticket summaries */
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Key Points
+                    </h3>
+                    <ul className="space-y-2">
+                      {summary.bulletPoints.map((point, index) => (
+                        <li
+                          key={index}
+                          className="flex items-start gap-2 text-sm text-muted-foreground"
+                        >
+                          <span className="text-primary mt-0.5">•</span>
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                </div>
-              )}
+                ) : null}
 
-              {/* Jira Tickets - only show if no ticket summaries (legacy view) */}
-              {(!summary.ticketSummaries || summary.ticketSummaries.length === 0) && summary.jiraTickets.length > 0 && (
+                {/* Untracked Work */}
+                {summary.untracked && summary.untracked.length > 0 && (
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                      Other Work
+                    </h3>
+                    <ul className="space-y-2">
+                      {summary.untracked.map((item, index) => (
+                        <li
+                          key={index}
+                          className="flex items-start gap-2 text-sm text-muted-foreground"
+                        >
+                          <span className="text-muted-foreground/60 mt-0.5">
+                            •
+                          </span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Highlights */}
+                {summary.highlights.length > 0 && (
+                  <div className="pt-4 border-t border-border/50 overflow-hidden">
+                    <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">
+                      Highlights
+                    </p>
+                    <div className="space-y-2">
+                      {summary.highlights.map((highlight, index) => (
+                        <div
+                          key={index}
+                          className="bg-primary/10 text-primary hover:bg-primary/20 px-3 py-2 rounded-md text-sm"
+                        >
+                          {highlight}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Jira Tickets - only show if no ticket summaries (legacy view) */}
+                {(!summary.ticketSummaries ||
+                  summary.ticketSummaries.length === 0) &&
+                  summary.jiraTickets.length > 0 && (
+                    <div className="pt-4 border-t border-border/50">
+                      <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">
+                        Jira Tickets
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {summary.jiraTickets.map((ticket) => (
+                          <Badge
+                            key={ticket}
+                            variant="secondary"
+                            className="font-mono text-xs"
+                          >
+                            {ticket}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                {/* Stats */}
                 <div className="pt-4 border-t border-border/50">
-                  <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">
-                    Jira Tickets
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {summary.jiraTickets.map((ticket) => (
-                      <Badge
-                        key={ticket}
-                        variant="secondary"
-                        className="font-mono text-xs"
-                      >
-                        {ticket}
-                      </Badge>
-                    ))}
+                  <div className="flex items-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <GitCommit className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-mono">{summary.totalCommits}</span>
+                      <span className="text-muted-foreground">commits</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-green-500">
+                      <Plus className="h-4 w-4" />
+                      <span className="font-mono">
+                        {summary.totalAdditions}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-red-500">
+                      <Minus className="h-4 w-4" />
+                      <span className="font-mono">
+                        {summary.totalDeletions}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      <span className="font-mono">{summary.totalFiles}</span>
+                      <span>files</span>
+                    </div>
                   </div>
                 </div>
-              )}
+              </CardContent>
+            </Card>
 
-              {/* Stats */}
-              <div className="pt-4 border-t border-border/50">
-                <div className="flex items-center gap-6 text-sm">
-                  <div className="flex items-center gap-2">
-                    <GitCommit className="h-4 w-4 text-muted-foreground" />
-                    <span className="font-mono">{summary.totalCommits}</span>
-                    <span className="text-muted-foreground">commits</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-green-500">
-                    <Plus className="h-4 w-4" />
-                    <span className="font-mono">{summary.totalAdditions}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-red-500">
-                    <Minus className="h-4 w-4" />
-                    <span className="font-mono">{summary.totalDeletions}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-muted-foreground">
-                    <FileText className="h-4 w-4" />
-                    <span className="font-mono">{summary.totalFiles}</span>
-                    <span>files</span>
-                  </div>
-                </div>
+            {/* Grid for Complexity and Commits */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Complexity Stats */}
+              <div className="lg:col-span-1">
+                <Card className="glass border-border/50">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg">Complexity</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ComplexityStats metrics={complexityMetrics} />
+                  </CardContent>
+                </Card>
+
+                {/* Pull Requests */}
+                {summary.pullRequestsData &&
+                  summary.pullRequestsData.length > 0 && (
+                    <Card className="glass border-border/50 mt-6">
+                      <CardHeader className="pb-3">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          <GitPullRequest className="h-5 w-5" />
+                          Pull Requests
+                          <span className="text-sm font-normal text-muted-foreground">
+                            ({summary.pullRequestsData.length})
+                          </span>
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-3">
+                          {summary.pullRequestsData.map((pr) => (
+                            <a
+                              key={pr.number}
+                              href={pr.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block p-3 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    {pr.merged ? (
+                                      <GitMerge className="h-4 w-4 text-purple-500 shrink-0" />
+                                    ) : pr.state === "open" ? (
+                                      <GitPullRequest className="h-4 w-4 text-green-500 shrink-0" />
+                                    ) : (
+                                      <GitPullRequest className="h-4 w-4 text-red-500 shrink-0" />
+                                    )}
+                                    <span className="font-mono text-sm text-muted-foreground">
+                                      #{pr.number}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm font-medium line-clamp-2">
+                                    {pr.title}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {pr.headBranch} → {pr.baseBranch}
+                                  </p>
+                                </div>
+                                <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                              </div>
+                            </a>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                {/* Repositories */}
+                {summary.repositories.length > 0 && (
+                  <Card className="glass border-border/50 mt-6">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">Repositories</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {summary.repositories.map((repo) => (
+                          <a
+                            key={repo}
+                            href={`https://github.com/${repo}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-between p-2 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
+                          >
+                            <span className="text-sm font-mono truncate">
+                              {repo}
+                            </span>
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                          </a>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
-            </CardContent>
-          </Card>
 
-          {/* Grid for Complexity and Commits */}
-          <div className="grid lg:grid-cols-3 gap-6">
-            {/* Complexity Stats */}
-            <div className="lg:col-span-1">
-              <Card className="glass border-border/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg">Complexity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ComplexityStats metrics={complexityMetrics} />
-                </CardContent>
-              </Card>
-
-              {/* Pull Requests */}
-              {summary.pullRequestsData && summary.pullRequestsData.length > 0 && (
-                <Card className="glass border-border/50 mt-6">
+              {/* Commits */}
+              <div className="lg:col-span-2">
+                <Card className="glass border-border/50">
                   <CardHeader className="pb-3">
                     <CardTitle className="text-lg flex items-center gap-2">
-                      <GitPullRequest className="h-5 w-5" />
-                      Pull Requests
-                      <span className="text-sm font-normal text-muted-foreground">
-                        ({summary.pullRequestsData.length})
-                      </span>
+                      <GitCommit className="h-5 w-5" />
+                      Commits
+                      {commits.length > 0 && (
+                        <span className="text-sm font-normal text-muted-foreground">
+                          ({commits.length})
+                        </span>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-3">
-                      {summary.pullRequestsData.map((pr) => (
-                        <a
-                          key={pr.number}
-                          href={pr.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block p-3 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                {pr.merged ? (
-                                  <GitMerge className="h-4 w-4 text-purple-500 shrink-0" />
-                                ) : pr.state === "open" ? (
-                                  <GitPullRequest className="h-4 w-4 text-green-500 shrink-0" />
-                                ) : (
-                                  <GitPullRequest className="h-4 w-4 text-red-500 shrink-0" />
-                                )}
-                                <span className="font-mono text-sm text-muted-foreground">
-                                  #{pr.number}
-                                </span>
-                              </div>
-                              <p className="text-sm font-medium line-clamp-2">
-                                {pr.title}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-1">
-                                {pr.headBranch} → {pr.baseBranch}
-                              </p>
-                            </div>
-                            <ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {/* Repositories */}
-              {summary.repositories.length > 0 && (
-                <Card className="glass border-border/50 mt-6">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-lg">Repositories</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {summary.repositories.map((repo) => (
-                        <a
-                          key={repo}
-                          href={`https://github.com/${repo}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-between p-2 rounded-lg bg-accent/50 hover:bg-accent transition-colors group"
-                        >
-                          <span className="text-sm font-mono truncate">
-                            {repo}
-                          </span>
-                          <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                        </a>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* Commits */}
-            <div className="lg:col-span-2">
-              <Card className="glass border-border/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <GitCommit className="h-5 w-5" />
-                    Commits
-                    {commits.length > 0 && (
-                      <span className="text-sm font-normal text-muted-foreground">
-                        ({commits.length})
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {commits.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <GitCommit className="h-8 w-8 mx-auto mb-3 opacity-50" />
-                      <p>No commit data stored for this summary.</p>
-                    </div>
-                  ) : (
-                    <ScrollArea className="h-[500px] pr-4">
-                      <div className="space-y-4">
-                        {commits.map((commit) => (
-                          <CommitCard key={commit.sha} {...commit} />
-                        ))}
+                    {commits.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <GitCommit className="h-8 w-8 mx-auto mb-3 opacity-50" />
+                        <p>No commit data stored for this summary.</p>
                       </div>
-                    </ScrollArea>
-                  )}
-                </CardContent>
-              </Card>
+                    ) : (
+                      <ScrollArea className="h-[500px] pr-4">
+                        <div className="space-y-4">
+                          {commits.map((commit) => (
+                            <CommitCard key={commit.sha} {...commit} />
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
+        </main>
       </div>
     </div>
   );
 }
-
