@@ -174,7 +174,7 @@ export function HistorySidebar({
       {/* Content container with fade animation */}
       <div
         className={cn(
-          "flex-1 flex flex-col overflow-hidden transition-all duration-300",
+          "flex-1 flex flex-col min-h-0 overflow-hidden transition-all duration-300",
           isCollapsed ? "opacity-0 pointer-events-none" : "opacity-100"
         )}
       >
@@ -234,7 +234,7 @@ export function HistorySidebar({
         </div>
 
         {/* Summary List */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="p-3 space-y-2">
             {loading ? (
               <>

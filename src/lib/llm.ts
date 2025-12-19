@@ -349,7 +349,7 @@ async function callOpenAI(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages: [
         {
           role: "system",
@@ -358,8 +358,7 @@ async function callOpenAI(
         },
         { role: "user", content: prompt },
       ],
-      temperature: 0.7,
-      max_tokens: 2000, // Increased for more detailed summaries
+      max_completion_tokens: 4000,
       response_format: { type: "json_object" },
     }),
   });
@@ -407,7 +406,7 @@ async function callAnthropic(
       "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5",
       max_tokens: 2000, // Increased for more detailed summaries
       messages: [
         {

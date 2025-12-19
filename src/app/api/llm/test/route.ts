@@ -4,7 +4,9 @@ import type { LLMProvider } from "@/stores/settings-store";
 /**
  * Test OpenAI API key by listing models
  */
-async function testOpenAI(apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function testOpenAI(
+  apiKey: string
+): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch("https://api.openai.com/v1/models", {
       method: "GET",
@@ -25,7 +27,8 @@ async function testOpenAI(apiKey: string): Promise<{ success: boolean; error?: s
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to connect to OpenAI",
+      error:
+        error instanceof Error ? error.message : "Failed to connect to OpenAI",
     };
   }
 }
@@ -33,7 +36,9 @@ async function testOpenAI(apiKey: string): Promise<{ success: boolean; error?: s
 /**
  * Test Anthropic API key with a minimal message
  */
-async function testAnthropic(apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function testAnthropic(
+  apiKey: string
+): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -43,7 +48,7 @@ async function testAnthropic(apiKey: string): Promise<{ success: boolean; error?
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5",
         max_tokens: 1,
         messages: [
           {
@@ -66,7 +71,10 @@ async function testAnthropic(apiKey: string): Promise<{ success: boolean; error?
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to connect to Anthropic",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to connect to Anthropic",
     };
   }
 }
@@ -74,7 +82,9 @@ async function testAnthropic(apiKey: string): Promise<{ success: boolean; error?
 /**
  * Test Google Gemini API key by listing models
  */
-async function testGoogle(apiKey: string): Promise<{ success: boolean; error?: string }> {
+async function testGoogle(
+  apiKey: string
+): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`,
@@ -95,7 +105,8 @@ async function testGoogle(apiKey: string): Promise<{ success: boolean; error?: s
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Failed to connect to Google",
+      error:
+        error instanceof Error ? error.message : "Failed to connect to Google",
     };
   }
 }
@@ -148,10 +159,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to test connection",
+        error:
+          error instanceof Error ? error.message : "Failed to test connection",
       },
       { status: 500 }
     );
   }
 }
-

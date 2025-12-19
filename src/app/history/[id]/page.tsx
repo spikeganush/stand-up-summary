@@ -560,19 +560,18 @@ export default function HistoryDetailPage({
 
               {/* Highlights */}
               {summary.highlights.length > 0 && (
-                <div className="pt-4 border-t border-border/50">
+                <div className="pt-4 border-t border-border/50 overflow-hidden">
                   <p className="text-xs text-muted-foreground mb-3 uppercase tracking-wide font-semibold">
                     Highlights
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="space-y-2">
                     {summary.highlights.map((highlight, index) => (
-                      <Badge
+                      <div
                         key={index}
-                        variant="secondary"
-                        className="bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1"
+                        className="bg-primary/10 text-primary hover:bg-primary/20 px-3 py-2 rounded-md text-sm"
                       >
                         {highlight}
-                      </Badge>
+                      </div>
                     ))}
                   </div>
                 </div>

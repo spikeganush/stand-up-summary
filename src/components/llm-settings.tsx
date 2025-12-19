@@ -47,12 +47,12 @@ const providerInfo: Record<
 > = {
   openai: {
     name: "OpenAI",
-    description: "GPT-4o Mini - Fast and cost-effective",
+    description: "GPT-5 mini - Fast and cost-effective",
     keyUrl: "https://platform.openai.com/api-keys",
   },
   anthropic: {
     name: "Anthropic",
-    description: "Claude Sonnet - Excellent reasoning",
+    description: "Claude Haiku 4.5 - Excellent reasoning",
     keyUrl: "https://console.anthropic.com/settings/keys",
   },
   google: {

@@ -86,15 +86,15 @@ export function SummaryHistory({ className }: SummaryHistoryProps) {
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent className="w-full sm:max-w-xl">
-        <SheetHeader>
+      <SheetContent className="w-full sm:max-w-xl flex flex-col h-full">
+        <SheetHeader className="shrink-0">
           <SheetTitle>Summary History</SheetTitle>
           <SheetDescription>
             View your previous stand-up summaries.
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6">
+        <div className="mt-6 flex-1 min-h-0">
           {loading ? (
             <div className="space-y-4">
               {[...Array(3)].map((_, i) => (
@@ -118,7 +118,7 @@ export function SummaryHistory({ className }: SummaryHistoryProps) {
               </p>
             </div>
           ) : (
-            <ScrollArea className="h-[500px]">
+            <ScrollArea className="h-full">
               <div className="space-y-2 pr-4">
                 {summaries.map((summary) => (
                   <Card
